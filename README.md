@@ -89,3 +89,4 @@ The build uses Webpack because Turbopack process sockets were unavailable in the
 Known limits: no Lighthouse run, external-link crawling, authenticated target sessions, CAPTCHA solving, automated PRs, or scheduled scans. Redirects to another origin are blocked; same-origin link checks report the first response without following redirects. SPA network writes are blocked unless form submissions are authorized, which can limit some read-only GraphQL sites. Visual screenshots can include the audited page's visible data; audit only sites you are authorized to inspect.
 
 The remaining npm advisory is an unpatched development-only `braces` dependency under Next.js's ESLint plugin; five audit entries share this chain. Production dependency audit is tracked separately. No Next.js downgrade or forced major dependency change is used. [Advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+# siteforge
