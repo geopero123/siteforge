@@ -28,15 +28,15 @@ const toolDefinitions: Array<[string, string, Record<string, Type>]> = [
   ["goBack", "Go back", {}],
 ];
 const declarations: FunctionDeclaration[] = toolDefinitions.map(
-  ([name, description, props]) => ({
+  ([name, description, properties]) => ({
     name: name as string,
     description: description as string,
     parameters: {
       type: Type.OBJECT,
       properties: Object.fromEntries(
-        Object.entries(props).map(([k, v]) => [k, { type: v }]),
+        Object.entries(properties).map(([name, type]) => [name, { type }]),
       ),
-      required: Object.keys(props),
+      required: Object.keys(properties),
     },
   }),
 );
@@ -61,8 +61,8 @@ export async function runMission(
   onScreenshot?: (image: Buffer, url: string) => Promise<string>,
 ): Promise<z.infer<typeof missionResultSchema>> {
   browser.budget = new ToolBudget();
-  const observed: string[] = [];
-  const started = Date.now();
+  const observedResults: string[] = [];
+  const startedAt = Date.now();
   const history: Content[] = [
     {
       role: "user",
@@ -74,7 +74,7 @@ export async function runMission(
     },
   ];
   for (let turn = 0; turn < 20; turn++) {
-    if (Date.now() - started > 120000)
+    if (Date.now() - startedAt > 120000)
       return {
         outcome: "PARTIAL" as const,
         summary: "Mission time limit reached.",
@@ -88,29 +88,9 @@ export async function runMission(
         .map((p) => p.functionCall!) ?? [];
     if (!calls.length) {
       const raw = content.parts?.map((p) => p.text ?? "").join("") ?? "";
-      try {
-        const result = missionResultSchema.parse(
-          JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")),
-        );
-        result.evidence = result.evidence.filter((e) =>
-          observed[e.step - 1]?.includes(e.observation),
-        );
-        if (result.outcome === "SUCCESS" && !result.evidence.length)
-          return {
-            outcome: "PARTIAL" as const,
-            summary:
-              "The agent claimed success without verifiable tool evidence. Review recorded steps.",
-            evidence: [],
-          };
-        return result;
-      } catch {
-        return {
-          outcome: "PARTIAL" as const,
-          summary: "The agent stopped without a validated completion result.",
-          evidence: [],
-        };
-      }
+      return validateMissionCompletion(raw, observedResults);
     }
+    // Return tool results and screenshot data as separate conversation messages.
     const responses: Part[] = [];
     const images: Part[] = [];
     for (const [index, call] of calls.entries()) {
@@ -135,7 +115,8 @@ export async function runMission(
         result = { error: e instanceof Error ? e.message : "Tool failed" };
       }
       await onStep(call.name ?? "", call.args, result);
-      observed.push(
+      // Failed steps keep their number but cannot support a success claim.
+      observedResults.push(
         result && typeof result === "object" && "error" in result
           ? ""
           : JSON.stringify(result),
@@ -144,22 +125,13 @@ export async function runMission(
         functionResponse: {
           id: call.id,
           name: call.name,
-          response: { result, step: observed.length },
+          response: { result, step: observedResults.length },
         },
       });
     }
     history.push({ role: "user", parts: responses });
     if (images.length) history.push({ role: "user", parts: images });
-    if (
-      JSON.stringify(
-        history.map((c) => ({
-          ...c,
-          parts: c.parts?.map((p) =>
-            p.inlineData ? { text: "[screenshot]" } : p,
-          ),
-        })),
-      ).length > 60000
-    )
+    if (getTextContextSize(history) > 60000)
       return {
         outcome: "PARTIAL" as const,
         summary: "Mission stopped at context limit. Review recorded steps.",
@@ -171,4 +143,42 @@ export async function runMission(
     summary: "Mission stopped at maximum agent turns.",
     evidence: [],
   };
+}
+
+function validateMissionCompletion(raw: string, observedResults: string[]) {
+  try {
+    const result = missionResultSchema.parse(
+      JSON.parse(raw.replace(/^```json\s*|\s*```$/g, "")),
+    );
+    // Evidence uses one-based step numbers and must quote a recorded result.
+    result.evidence = result.evidence.filter((evidence) =>
+      observedResults[evidence.step - 1]?.includes(evidence.observation),
+    );
+    if (result.outcome === "SUCCESS" && !result.evidence.length)
+      return {
+        outcome: "PARTIAL" as const,
+        summary:
+          "The agent claimed success without verifiable tool evidence. Review recorded steps.",
+        evidence: [],
+      };
+    return result;
+  } catch {
+    return {
+      outcome: "PARTIAL" as const,
+      summary: "The agent stopped without a validated completion result.",
+      evidence: [],
+    };
+  }
+}
+
+function getTextContextSize(history: Content[]) {
+  // Count text and tool results without including base64 screenshot bytes.
+  return JSON.stringify(
+    history.map((content) => ({
+      ...content,
+      parts: content.parts?.map((part) =>
+        part.inlineData ? { text: "[screenshot]" } : part,
+      ),
+    })),
+  ).length;
 }

@@ -63,9 +63,9 @@ export const auditInputSchema = z
     mission: z.string().max(1000).optional(),
     allowFormSubmission: z.boolean().default(false),
   })
-  .superRefine((v, c) => {
-    if (v.mode === "mission" && !v.mission?.trim())
-      c.addIssue({
+  .superRefine((input, context) => {
+    if (input.mode === "mission" && !input.mission?.trim())
+      context.addIssue({
         code: "custom",
         message: "Provide a mission objective",
         path: ["mission"],
@@ -79,54 +79,63 @@ export interface AuditEvent {
   at?: string;
 }
 export function deduplicate(findings: Finding[]): Finding[] {
-  const map = new Map<string, Finding>();
-  for (const f of findings) {
+  const findingsByKey = new Map<string, Finding>();
+  for (const finding of findings) {
+    // Layout findings vary by viewport; other categories merge across viewports.
     const key = [
-      f.category,
-      f.url,
-      f.category === "responsive" || f.category === "ux"
-        ? (f.viewport?.width ?? "")
+      finding.category,
+      finding.url,
+      finding.category === "responsive" || finding.category === "ux"
+        ? (finding.viewport?.width ?? "")
         : "",
-      f.title.toLowerCase().replace(/[^a-z0-9]/g, ""),
+      finding.title.toLowerCase().replace(/[^a-z0-9]/g, ""),
     ].join("|");
-    const prior = map.get(key);
-    if (!prior) {
-      map.set(key, { ...f, evidence: [...f.evidence] });
+    const previousFinding = findingsByKey.get(key);
+    if (!previousFinding) {
+      findingsByKey.set(key, { ...finding, evidence: [...finding.evidence] });
     } else {
-      const strongest = prior.confidence < f.confidence ? f : prior;
-      const evidence = [...prior.evidence, ...f.evidence]
+      const strongestFinding =
+        previousFinding.confidence < finding.confidence
+          ? finding
+          : previousFinding;
+      const evidence = [...previousFinding.evidence, ...finding.evidence]
         .filter(
-          (e, i, all) =>
-            all.findIndex((v) => JSON.stringify(v) === JSON.stringify(e)) === i,
+          (item, index, allEvidence) =>
+            allEvidence.findIndex(
+              (candidate) => JSON.stringify(candidate) === JSON.stringify(item),
+            ) === index,
         )
         .slice(0, 20);
-      map.set(key, { ...strongest, evidence });
+      findingsByKey.set(key, { ...strongestFinding, evidence });
     }
   }
-  return [...map.values()];
+  return [...findingsByKey.values()];
 }
 export function score(issues: Array<Finding & { status?: string }>) {
+  // Only open findings lower the score, weighted by severity and confidence.
   const weights = { critical: 30, high: 15, medium: 7, low: 2, info: 0 };
-  const subs = Object.fromEntries(
-    categories.map((c) => [
-      c,
-      Math.max(
-        0,
-        Math.round(
-          100 -
-            issues
-              .filter(
-                (i) => i.category === c && (!i.status || i.status === "open"),
-              )
-              .reduce((n, i) => n + weights[i.severity] * i.confidence, 0),
-        ),
-      ),
-    ]),
+  const categoryScores = Object.fromEntries(
+    categories.map((category) => {
+      const totalPenalty = issues
+        .filter(
+          (issue) =>
+            issue.category === category &&
+            (!issue.status || issue.status === "open"),
+        )
+        .reduce(
+          (penalty, issue) =>
+            penalty + weights[issue.severity] * issue.confidence,
+          0,
+        );
+      const categoryScore = Math.max(0, Math.round(100 - totalPenalty));
+      return [category, categoryScore];
+    }),
   ) as Record<(typeof categories)[number], number>;
   return {
     overall: Math.round(
-      Object.values(subs).reduce((a, b) => a + b, 0) / categories.length,
+      Object.values(categoryScores).reduce((total, value) => total + value, 0) /
+        categories.length,
     ),
-    categories: subs,
+    categories: categoryScores,
   };
 }

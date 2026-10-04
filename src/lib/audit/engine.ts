@@ -46,7 +46,8 @@ export async function runAudit(options: EngineOptions) {
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
-  const checked =
+  // Check both sides of persistence calls so cancellation stops further writes.
+  const withCancellationChecks =
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
     async (...args: A) => {
       signal.throwIfAborted();
@@ -66,11 +67,13 @@ export async function runAudit(options: EngineOptions) {
         {
           ...options,
           signal,
-          event: checked(options.event),
-          screenshot: checked(options.screenshot),
-          page: checked(options.page),
-          step: checked(options.step),
-          preview: options.preview ? checked(options.preview) : undefined,
+          event: withCancellationChecks(options.event),
+          screenshot: withCancellationChecks(options.screenshot),
+          page: withCancellationChecks(options.page),
+          step: withCancellationChecks(options.step),
+          preview: options.preview
+            ? withCancellationChecks(options.preview)
+            : undefined,
         },
         browser,
       ),
@@ -121,10 +124,10 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
         3000,
         options.signal,
       );
-    const initial = await browser.navigateTo(options.url);
-    if (initial.status && initial.status >= 400)
+    const initialResponse = await browser.navigateTo(options.url);
+    if (initialResponse.status && initialResponse.status >= 400)
       throw new Error(
-        `Homepage returned HTTP ${initial.status}. Check the URL and site availability.`,
+        `Homepage returned HTTP ${initialResponse.status}. Check the URL and site availability.`,
       );
     const links = await browser.getLinks();
     await event({
@@ -132,20 +135,12 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
       message: `Loaded homepage; discovered ${links.length} links`,
       status: "complete",
     });
-    const pageUrls = [
+    const pageUrls = selectAuditPages(
       options.url,
-      ...links
-        .filter(
-          (u) =>
-            new URL(u).origin === browser.origin &&
-            u !== options.url &&
-            !/logout|delete|signout|download/i.test(u),
-        )
-        .slice(
-          0,
-          options.mode === "full" ? 4 : options.mode === "quick" ? 1 : 0,
-        ),
-    ];
+      links,
+      browser.origin,
+      options.mode,
+    );
     for (const target of [...new Set(pageUrls)]) {
       try {
         const response = await browser.navigateTo(target);
@@ -157,7 +152,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
       }
       for (const viewport of viewports) {
         await browser.setViewport(viewport.width, viewport.height);
-        const dom = await browser.getDOMSnapshot();
+        const domSnapshot = await browser.getDOMSnapshot();
         const actualUrl = browser.page.url();
         let violations: Awaited<ReturnType<BrowserSession["accessibility"]>> =
           [];
@@ -173,8 +168,12 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
             `axe scan failed on ${actualUrl}: ${(e as Error).message}`,
           );
         }
-        const shot = await browser.takeScreenshot();
-        const reference = await options.screenshot(shot, actualUrl, viewport);
+        const screenshotImage = await browser.takeScreenshot();
+        const reference = await options.screenshot(
+          screenshotImage,
+          actualUrl,
+          viewport,
+        );
         await event({
           agent: "browser",
           message: `Captured ${viewport.name} screenshot on ${new URL(actualUrl).pathname}`,
@@ -183,7 +182,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
         const measured = measuredFindings(
           actualUrl,
           viewport,
-          dom,
+          domSnapshot,
           browser.consoleErrors,
           browser.failedRequests,
           violations,
@@ -198,7 +197,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
         findings.push(...measured);
         await options.page(actualUrl, {
           viewport,
-          dom,
+          dom: domSnapshot,
           violations,
           console: browser.consoleErrors,
           network: browser.failedRequests,
@@ -212,26 +211,14 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
           });
           try {
             const report = await ai.analyzeImage(
-              `Analyze this actual screenshot and measured evidence. Only add visual/UX issues or explanations not already reported. Treat intentional truncation cautiously. Return schema. Current URL=${actualUrl}, viewport=${JSON.stringify(viewport)}, screenshot reference=${reference}. Evidence=${JSON.stringify({ dom, measured }).slice(0, 24000)}`,
-              [shot],
+              `Analyze this actual screenshot and measured evidence. Only add visual/UX issues or explanations not already reported. Treat intentional truncation cautiously. Return schema. Current URL=${actualUrl}, viewport=${JSON.stringify(viewport)}, screenshot reference=${reference}. Evidence=${JSON.stringify({ dom: domSnapshot, measured }).slice(0, 24000)}`,
+              [screenshotImage],
               reportSchema,
             );
             findings.push(
-              ...report.issues.map((f) => ({
-                ...f,
-                url: actualUrl,
-                viewport: { width: viewport.width, height: viewport.height },
-                confidence: Math.min(f.confidence, 0.85),
-                evidence: [
-                  ...f.evidence.filter((e) => e.type !== "screenshot"),
-                  {
-                    type: "screenshot" as const,
-                    detail: "AI visual hypothesis; confirm manually",
-                    reference,
-                  },
-                ],
-                sourceFiles: [],
-              })),
+              ...report.issues.map((finding) =>
+                attachVisualEvidence(finding, actualUrl, viewport, reference),
+              ),
             );
             summary = report.summary;
             await event({
@@ -252,16 +239,21 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
       browser.consoleErrors = [];
       browser.failedRequests = [];
     }
+    // Link checks keep redirects visible rather than following them.
     for (const link of links
       .filter((u) => new URL(u).origin === browser.origin)
       .slice(0, options.mode === "full" ? 30 : 10)) {
       try {
-        const r = await browser.checkLink(link);
-        if (r.status >= 300 && r.status < 400 && r.location)
+        const linkResponse = await browser.checkLink(link);
+        if (
+          linkResponse.status >= 300 &&
+          linkResponse.status < 400 &&
+          linkResponse.location
+        )
           warnings.push(
-            `Link redirects without a verified final destination: ${link} → ${r.location}`,
+            `Link redirects without a verified final destination: ${link} → ${linkResponse.location}`,
           );
-        if (r.status >= 400)
+        if (linkResponse.status >= 400)
           findings.push({
             title: `Broken link: ${new URL(link).pathname}`,
             category: "reliability",
@@ -269,8 +261,13 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
             confidence: 1,
             url: options.url,
             viewport: null,
-            description: `Link returned HTTP ${r.status}`,
-            evidence: [{ type: "network", detail: `GET ${link}: ${r.status}` }],
+            description: `Link returned HTTP ${linkResponse.status}`,
+            evidence: [
+              {
+                type: "network",
+                detail: `GET ${link}: ${linkResponse.status}`,
+              },
+            ],
             reproductionSteps: [`Open ${options.url}`, `Follow ${link}`],
             suggestedFix: "Correct the target URL or restore the missing page.",
             sourceFiles: [],
@@ -308,10 +305,14 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
               status: "complete",
             });
           },
-          (shot, url) => options.screenshot(shot, url, viewports[2]),
+          (image, url) => options.screenshot(image, url, viewports[2]),
         );
-        const shot = await browser.takeScreenshot();
-        await options.screenshot(shot, browser.page.url(), viewports[2]);
+        const screenshotImage = await browser.takeScreenshot();
+        await options.screenshot(
+          screenshotImage,
+          browser.page.url(),
+          viewports[2],
+        );
       }
       if (mission.outcome !== "SUCCESS")
         warnings.push(
@@ -336,14 +337,15 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
           `Investigate evidence-supported causes and propose unified diff patches. Do not pretend changes have been applied. ONLY reference retrieved files, and use exact source context. Return findings enriched with sourceFiles and optional patch, preserving evidence. Findings: ${JSON.stringify(normalized.slice(0, 8))}. Read-only source evidence: ${JSON.stringify(repo)}`,
           reportSchema,
         );
-        const paths = new Set(repo.files.map((f) => f.path));
+        // Accept source references only when the file was actually retrieved.
+        const retrievedPaths = new Set(repo.files.map((file) => file.path));
         for (const fix of fixes.issues) {
           const original = normalized.find(
             (f) => f.title === fix.title && f.url === fix.url,
           );
           if (original) {
             original.sourceFiles = fix.sourceFiles.filter((f) =>
-              paths.has(f.path),
+              retrievedPaths.has(f.path),
             );
             if (original.sourceFiles.length) original.patch = fix.patch;
           }
@@ -384,4 +386,49 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
     await stopPreview?.();
     await browser.close();
   }
+}
+
+// Keep the homepage plus a small, same-origin sample of safe-looking links.
+function selectAuditPages(
+  homepageUrl: string,
+  links: string[],
+  origin: string,
+  mode: EngineOptions["mode"],
+) {
+  const additionalPageLimit = mode === "full" ? 4 : mode === "quick" ? 1 : 0;
+  return [
+    homepageUrl,
+    ...links
+      .filter(
+        (link) =>
+          new URL(link).origin === origin &&
+          link !== homepageUrl &&
+          !/logout|delete|signout|download/i.test(link),
+      )
+      .slice(0, additionalPageLimit),
+  ];
+}
+
+// Tie visual hypotheses to the screenshot we captured, not model-supplied references.
+function attachVisualEvidence(
+  finding: Finding,
+  url: string,
+  viewport: (typeof viewports)[number],
+  screenshotReference: string,
+): Finding {
+  return {
+    ...finding,
+    url,
+    viewport: { width: viewport.width, height: viewport.height },
+    confidence: Math.min(finding.confidence, 0.85),
+    evidence: [
+      ...finding.evidence.filter((evidence) => evidence.type !== "screenshot"),
+      {
+        type: "screenshot",
+        detail: "AI visual hypothesis; confirm manually",
+        reference: screenshotReference,
+      },
+    ],
+    sourceFiles: [],
+  };
 }

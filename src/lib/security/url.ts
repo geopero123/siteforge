@@ -46,10 +46,10 @@ export async function validateTarget(raw: string, allowLocal = false) {
   return url;
 }
 export class ToolBudget {
-  private count = 0;
-  private nav = 0;
-  private repeats = new Map<string, number>();
-  private started = Date.now();
+  private stepCount = 0;
+  private navigationCount = 0;
+  private actionCounts = new Map<string, number>();
+  private startedAt = Date.now();
   constructor(
     readonly maxSteps = 20,
     readonly maxNavigations = 6,
@@ -57,18 +57,19 @@ export class ToolBudget {
   ) {}
   consume(name: string, args: unknown) {
     if (
-      ++this.count > this.maxSteps ||
-      Date.now() - this.started > this.timeout
+      ++this.stepCount > this.maxSteps ||
+      Date.now() - this.startedAt > this.timeout
     )
       throw new Error("Mission step or time limit reached");
     if (
       ["navigateTo", "goBack"].includes(name) &&
-      ++this.nav > this.maxNavigations
+      ++this.navigationCount > this.maxNavigations
     )
       throw new Error("Navigation limit reached");
+    // Repeating the same tool and arguments usually means the mission is stuck.
     const key = name + JSON.stringify(args);
-    const n = (this.repeats.get(key) ?? 0) + 1;
-    this.repeats.set(key, n);
-    if (n > 3) throw new Error("Repeated action loop detected");
+    const repeatCount = (this.actionCounts.get(key) ?? 0) + 1;
+    this.actionCounts.set(key, repeatCount);
+    if (repeatCount > 3) throw new Error("Repeated action loop detected");
   }
 }

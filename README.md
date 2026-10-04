@@ -2,6 +2,8 @@
 
 Website QA with real Chromium evidence, axe accessibility checks, measured layout/SEO/runtime findings, Gemini screenshot analysis, and saved Supabase reports. Next.js serves the workspace; a separate worker performs audits from a durable queue. Production has no sample-findings fallback.
 
+For a walkthrough of the request flow and main modules, see the [code guide](docs/CODE_GUIDE.md).
+
 ## Run locally
 
 Use Node.js 22 or newer.

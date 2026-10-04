@@ -5,8 +5,9 @@ import { redactSecrets } from "../security/redact";
 export const repositorySchema = z
   .string()
   .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "Use owner/repository");
-async function github(path: string, token?: string) {
-  const r = await fetch("https://api.github.com/" + path, {
+
+async function fetchGitHubJson(path: string, token?: string) {
+  const response = await fetch("https://api.github.com/" + path, {
     headers: {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -14,11 +15,11 @@ async function github(path: string, token?: string) {
     },
     signal: AbortSignal.timeout(10000),
   });
-  if (!r.ok)
+  if (!response.ok)
     throw new Error(
-      `GitHub API ${r.status}: check repository visibility and worker token permissions.`,
+      `GitHub API ${response.status}: check repository visibility and worker token permissions.`,
     );
-  return r.json() as Promise<unknown>;
+  return response.json() as Promise<unknown>;
 }
 export async function investigateRepository(
   ai: AIProvider,
@@ -27,43 +28,51 @@ export async function investigateRepository(
   userId?: string,
 ) {
   repositorySchema.parse(repository);
-  const allowed = (process.env.GITHUB_REPOSITORIES ?? "")
+  // A worker token is available only to its configured user and repositories.
+  const allowedRepositories = (process.env.GITHUB_REPOSITORIES ?? "")
     .split(",")
-    .map((r) => r.trim().toLowerCase());
+    .map((repositoryName) => repositoryName.trim().toLowerCase());
   const token =
     userId &&
     userId === process.env.GITHUB_TOKEN_USER_ID &&
-    allowed.includes(repository.toLowerCase())
+    allowedRepositories.includes(repository.toLowerCase())
       ? process.env.GITHUB_TOKEN
       : undefined;
-  const meta = (await github(`repos/${repository}`, token)) as {
+  const repositoryMetadata = (await fetchGitHubJson(
+    `repos/${repository}`,
+    token,
+  )) as {
     default_branch: string;
   };
-  const tree = (await github(
-    `repos/${repository}/git/trees/${encodeURIComponent(meta.default_branch)}?recursive=1`,
+  const tree = (await fetchGitHubJson(
+    `repos/${repository}/git/trees/${encodeURIComponent(repositoryMetadata.default_branch)}?recursive=1`,
     token,
   )) as {
     tree: Array<{ path: string; type: string; size?: number }>;
     truncated: boolean;
   };
-  const paths = tree.tree
+  // Keep a bounded index of source files for the model to choose from.
+  const sourcePaths = tree.tree
     .filter(
-      (x) =>
-        x.type === "blob" &&
-        /\.(tsx?|jsx?|css|html)$/.test(x.path) &&
-        !/(node_modules|vendor|\.env|lock)/.test(x.path) &&
-        (!x.size || x.size < 25000),
+      (entry) =>
+        entry.type === "blob" &&
+        /\.(tsx?|jsx?|css|html)$/.test(entry.path) &&
+        !/(node_modules|vendor|\.env|lock)/.test(entry.path) &&
+        (!entry.size || entry.size < 25000),
     )
     .slice(0, 1200)
-    .map((x) => x.path);
+    .map((entry) => entry.path);
   const selection = await ai.generateStructured(
-    `Select up to 4 likely source files to investigate these findings. Only select exact paths from the repository index. Findings: ${JSON.stringify(findings.slice(0, 8))}. Index: ${JSON.stringify(paths)}`,
+    `Select up to 4 likely source files to investigate these findings. Only select exact paths from the repository index. Findings: ${JSON.stringify(findings.slice(0, 8))}. Index: ${JSON.stringify(sourcePaths)}`,
     z.object({ paths: z.array(z.string()).max(4) }),
   );
+  // Validate model-selected paths against the index before fetching their contents.
   const files = [];
-  for (const path of selection.paths.filter((p) => paths.includes(p))) {
-    const file = (await github(
-      `repos/${repository}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(meta.default_branch)}`,
+  for (const path of selection.paths.filter((path) =>
+    sourcePaths.includes(path),
+  )) {
+    const file = (await fetchGitHubJson(
+      `repos/${repository}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(repositoryMetadata.default_branch)}`,
       token,
     )) as { content?: string; encoding: string };
     if (file.encoding === "base64" && file.content)
@@ -74,5 +83,9 @@ export async function investigateRepository(
         ),
       });
   }
-  return { files, branch: meta.default_branch, truncated: tree.truncated };
+  return {
+    files,
+    branch: repositoryMetadata.default_branch,
+    truncated: tree.truncated,
+  };
 }
