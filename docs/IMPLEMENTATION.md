@@ -1,0 +1,11 @@
+# SiteForge implementation
+
+Vertical slices: (1) authenticated projects → durable queue → browser evidence → Gemini → persisted report; (2) same-origin exploration and bounded mission function calling; (3) read-only GitHub retrieval and suggested diffs.
+
+Next.js serves user-scoped Supabase queries. A separate Node worker claims jobs atomically, renews leases, stores chronological events and uploads screenshots to a private bucket. Jobs survive web restarts. Workers fail expired jobs rather than silently restart potentially state-changing missions. Browser, deterministic analyzers, visual reasoning, code investigation and report normalization have separate responsibilities; they are logical modules, not ornamental independent agents.
+
+Production workers must run in a disposable unprivileged container with network egress rules blocking private, loopback, link-local, metadata and internal destinations for IPv4 and IPv6. Application DNS checks and per-request validation are defense in depth, not a replacement for egress isolation (DNS rebinding, Chromium networking). Worker requires AUDIT_EGRESS_ISOLATED=true outside controlled local development. No browser credentials, host mounts or cloud credentials belong in the browser container.
+
+Scoring: each category starts at 100; subtract critical=30, high=15, medium=7, low=2, info=0 multiplied by confidence. Round and clamp to 0–100. Overall is the rounded arithmetic mean of six categories. Deduplication occurs before scoring. Resolved/ignored issues do not affect current scores; original score stays in the audit. Scores are issue-based risk indices, not Lighthouse scores or proof of absence of defects. Reports include coverage and unavailable checks.
+
+Mission tools are same-origin, step/navigation/time/context bounded, and loop detected. Purchases and destructive controls are blocked; forms and synthetic account registration require explicit audit authorization. Screenshots are sent as actual image data. Success requires exact observations from successful recorded tool steps. A failed or incomplete mission makes the audit partial. Controlled fixture integrations test behavior without contacting third parties.

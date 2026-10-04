@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
+ENV NODE_ENV=production
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY --chown=pwuser:pwuser src ./src
+COPY --chown=pwuser:pwuser scripts/worker.ts ./scripts/worker.ts
+USER pwuser
+CMD ["node", "--import", "tsx", "scripts/worker.ts"]
