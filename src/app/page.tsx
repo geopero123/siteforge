@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ScanLine, Braces, ShieldCheck, ArrowDown } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { UrlEntry } from "@/components/url-entry";
+import { Pricing } from "@/components/pricing";
 export default function Landing() {
   return (
     <>
@@ -9,6 +10,7 @@ export default function Landing() {
         <Brand />
         <nav>
           <a href="#how-it-works">How it works</a>
+          <a href="#pricing">Pricing</a>
           <Link href="/login">Sign in</Link>
           <Link className="button small" href="/dashboard">
             Open workspace ↗
@@ -105,6 +107,7 @@ export default function Landing() {
             </p>
           </article>
         </section>
+        <Pricing />
         <footer className="landing-footer">
           <span>SiteForge / Built for people who ship.</span>
           <span>Observe → Measure → Explain → Improve</span>

@@ -9,6 +9,8 @@ import { POST as auditPost } from "../src/app/api/audits/route";
 import { POST as projectPost } from "../src/app/api/projects/route";
 import { PATCH } from "../src/app/api/issues/[id]/route";
 import { GET } from "../src/app/api/audits/[id]/route";
+import { POST as checkoutPost } from "../src/app/api/billing/checkout/route";
+import { POST as portalPost } from "../src/app/api/billing/portal/route";
 beforeEach(() => vi.resetAllMocks());
 function request(body: unknown) {
   return new Request("https://siteforge.example/api/audits", {
@@ -23,6 +25,54 @@ function request(body: unknown) {
 it("rejects unauthenticated audit creation", async () => {
   vi.mocked(requireUser).mockRejectedValue(new Error("UNAUTHORIZED"));
   expect((await auditPost(request({}))).status).toBe(401);
+});
+it("requires sign-in before checkout or billing portal access", async () => {
+  vi.mocked(requireUser).mockRejectedValue(new Error("UNAUTHORIZED"));
+  expect((await checkoutPost(request({ plan: "single" }))).status).toBe(401);
+  expect((await portalPost(request({}))).status).toBe(401);
+});
+it("rejects checkout and portal mutations from another origin", async () => {
+  for (const handler of [checkoutPost, portalPost]) {
+    expect(
+      (
+        await handler(
+          new Request("https://siteforge.example/api/billing/checkout", {
+            method: "POST",
+            headers: { origin: "https://evil.example" },
+          }),
+        )
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
+  }
+  expect(requireUser).not.toHaveBeenCalled();
+});
+it("returns payment-required when database credit enforcement rejects an audit", async () => {
+  const chain = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    insert: vi.fn(),
+    in: vi.fn(async () => ({ count: 0, error: null })),
+    single: vi.fn(async () => ({
+      data: null,
+      error: { message: "TEST_CREDITS_REQUIRED" },
+    })),
+  };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockReturnValue(chain);
+  chain.insert.mockReturnValue(chain);
+  vi.mocked(requireUser).mockResolvedValue({
+    db: { from: vi.fn(() => chain) },
+    user: { id: "owner" },
+  } as never);
+  const response = await auditPost(
+    request({
+      projectId: crypto.randomUUID(),
+      url: "https://example.com",
+      mode: "quick",
+    }),
+  );
+  expect(response.status).toBe(402);
+  expect((await response.json()).code).toBe("TEST_CREDITS_REQUIRED");
 });
 it("rejects unauthenticated project creation", async () => {
   vi.mocked(requireUser).mockRejectedValue(new Error("UNAUTHORIZED"));

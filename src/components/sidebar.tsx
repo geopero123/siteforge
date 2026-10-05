@@ -8,6 +8,7 @@ import {
   Target,
   Settings,
   LogOut,
+  CreditCard,
 } from "lucide-react";
 import { Brand } from "./brand";
 import { browserDb } from "@/lib/supabase/client";
@@ -19,6 +20,7 @@ export function Sidebar({ email }: { email: string }) {
     ["/dashboard/projects", "Projects", Folder],
     ["/dashboard/new", "New audit", ScanLine],
     ["/dashboard/missions", "Mission runner", Target],
+    ["/dashboard/billing", "Tests & billing", CreditCard],
     ["/dashboard/settings", "Settings", Settings],
   ] as const;
   return (

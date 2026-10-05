@@ -38,6 +38,23 @@ export async function POST(request: Request) {
       })
       .select()
       .single();
+    if (error?.message.includes("TEST_CREDITS_REQUIRED"))
+      return NextResponse.json(
+        {
+          error:
+            "You have no tests left. Buy a $2 test or get 20 tests for $7.99/month.",
+          code: "TEST_CREDITS_REQUIRED",
+        },
+        { status: 402 },
+      );
+    if (error?.message.includes("AUDIT_QUEUE_FULL"))
+      return NextResponse.json(
+        {
+          error:
+            "You already have three pending audits. Wait for one to finish.",
+        },
+        { status: 429 },
+      );
     if (error) throw new Error(error.message);
     return NextResponse.json(data, { status: 202 });
   } catch (e) {

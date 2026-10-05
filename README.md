@@ -4,6 +4,8 @@ Website QA with real Chromium evidence, axe accessibility checks, measured layou
 
 For a walkthrough of the request flow and main modules, see the [code guide](docs/CODE_GUIDE.md).
 
+Pricing is $2 for a single test or $7.99/month for 20 tests. Hosted checkout, a billing portal, signed payment webhooks and database-enforced credits are implemented. Paid access stays off until configured. See [billing setup and verification](docs/BILLING.md) before enabling payments; the billing migration is separate from the initial schema.
+
 ## Run locally
 
 Use Node.js 22 or newer.

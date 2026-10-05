@@ -759,6 +759,57 @@ summary {
 .spinner {
   animation: rotate 2s linear infinite;
 }
+.pricing-section {
+  margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.pricing-heading {
+  font-size: 28px;
+  line-height: 1.25;
+}
+.pricing-card {
+  position: relative;
+}
+.pricing-card.featured {
+  border-color: #4a7356;
+}
+.pricing-card > .badge {
+  margin-bottom: 16px;
+}
+.pricing-card ul {
+  padding-left: 20px;
+  color: var(--muted);
+  margin: 20px 0 28px;
+}
+.pricing-card li {
+  margin: 8px 0;
+}
+.pricing-price {
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -1.5px;
+}
+.pricing-price span {
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.pricing-terms {
+  margin-top: 22px;
+  font-size: 12px;
+  max-width: 860px;
+}
+.billing-actions {
+  margin-top: 24px;
+}
+.billing-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
 @keyframes rotate {
   to {
     transform: rotate(360deg);

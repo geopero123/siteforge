@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 interface Project {
   id: string;
   name: string;
@@ -24,6 +25,7 @@ export function AuditForm({
     [mission, setMission] = useState(""),
     [allow, setAllow] = useState(false),
     [busy, setBusy] = useState(false),
+    [needsCredits, setNeedsCredits] = useState(false),
     [error, setError] = useState("");
   return (
     <form
@@ -32,6 +34,7 @@ export function AuditForm({
         e.preventDefault();
         setBusy(true);
         setError("");
+        setNeedsCredits(false);
         try {
           let id = projectId;
           if (!id) {
@@ -60,6 +63,7 @@ export function AuditForm({
             }),
           });
           const d = await r.json();
+          if (r.status === 402) setNeedsCredits(true);
           if (!r.ok) throw new Error(d.error);
           router.push("/dashboard/audits/" + d.id);
         } catch (e) {
@@ -72,6 +76,13 @@ export function AuditForm({
       {error && (
         <div role="alert" className="alert error">
           {error}
+          {needsCredits && (
+            <p>
+              <Link className="button small" href="/dashboard/billing">
+                Get test credits →
+              </Link>
+            </p>
+          )}
         </div>
       )}
       <label>
@@ -163,6 +174,9 @@ export function AuditForm({
         </>
       )}
       <p className="form-hint">
+        Each audit uses one test credit when paid access is enabled.{" "}
+        <Link href="/dashboard/billing">View your balance and plans ↗</Link>
+        <br />
         Scans use 1440 × 900, 768 × 1024 and 390 × 844 viewports. Navigation
         stays on the same origin.
       </p>
