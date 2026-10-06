@@ -20,6 +20,11 @@ const securityHeaders = [
 ];
 
 const config: NextConfig = {
+  outputFileTracingIncludes: {
+    "/api/audits": ["./.audit-worker/worker.cjs"],
+    "/api/audits/*": ["./.audit-worker/worker.cjs"],
+    "/api/worker": ["./.audit-worker/worker.cjs"],
+  },
   output: "standalone",
   serverExternalPackages: ["playwright", "axe-core"],
   poweredByHeader: false,

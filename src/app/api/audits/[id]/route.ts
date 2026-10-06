@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
+import {
+  dispatchQueuedAudit,
+  workerConfigurationError,
+} from "@/lib/audit/cloud-worker";
 import { requireUser } from "@/lib/supabase/server";
 import { apiError } from "@/lib/api";
 export async function GET(
@@ -15,6 +20,12 @@ export async function GET(
       .single();
     if (error || !audit)
       return NextResponse.json({ error: "Audit not found" }, { status: 404 });
+    const workerError =
+      audit.status === "queued" ? workerConfigurationError() : null;
+    if (audit.status === "queued" && !workerError)
+      after(async () => {
+        await dispatchQueuedAudit(id).catch(() => {});
+      });
     const [issues, events, screenshots, steps] = await Promise.all([
       db.from("issues").select("*").eq("audit_id", id),
       db.from("agent_runs").select("*").eq("audit_id", id).order("id"),
@@ -39,6 +50,7 @@ export async function GET(
     return NextResponse.json(
       {
         audit,
+        workerError,
         issues: issues.data,
         events: events.data,
         screenshots: shots,

@@ -12,6 +12,7 @@ if (!local && process.env.AUDIT_EGRESS_ISOLATED !== "true")
     "Worker refused to start. Run in an egress-isolated container and set AUDIT_EGRESS_ISOLATED=true, or use controlled local development.",
   );
 const db = adminDb();
+const targetAuditId = process.env.WORKER_AUDIT_ID;
 let stopping = false;
 let active: AbortController | undefined;
 process.on("SIGINT", () => {
@@ -29,9 +30,23 @@ function checked<T extends { error: unknown }>(result: T) {
 async function work() {
   while (!stopping) {
     checked(await db.rpc("expire_audits"));
-    const claimed = checked(await db.rpc("claim_audit"));
+    const claimed = checked(
+      targetAuditId
+        ? await db
+            .from("audits")
+            .update({
+              status: "running",
+              started_at: new Date().toISOString(),
+              heartbeat_at: new Date().toISOString(),
+            })
+            .eq("id", targetAuditId)
+            .eq("status", "queued")
+            .select("*")
+        : await db.rpc("claim_audit"),
+    );
     const audit = claimed.data?.[0];
     if (!audit) {
+      if (targetAuditId) return;
       await new Promise((r) =>
         setTimeout(r, Number(process.env.WORKER_POLL_MS) || 2000),
       );
@@ -204,6 +219,7 @@ async function work() {
       active = undefined;
       clearInterval(heartbeat);
     }
+    if (targetAuditId) return;
   }
 }
 work().catch((e) => {

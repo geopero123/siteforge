@@ -294,7 +294,9 @@ export function AuditView({ id }: { id: string }) {
               <div className="panel-title">
                 <h2>
                   {audit.status === "queued"
-                    ? "Waiting for a worker"
+                    ? data.workerError
+                      ? "Worker setup required"
+                      : "Starting your audit"
                     : website
                       ? "Inspecting your website"
                       : "Scanning your repository"}
@@ -305,8 +307,8 @@ export function AuditView({ id }: { id: string }) {
                 <div className="alert info">
                   <History size={16} />
                   <div>
-                    This audit is queued. Progress appears here as soon as a
-                    worker picks it up.
+                    {data.workerError ||
+                      "Starting a cloud worker. Progress will appear here shortly."}
                   </div>
                 </div>
               )}

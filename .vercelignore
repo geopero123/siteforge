@@ -5,6 +5,5 @@ docs/RESUME.md
 coverage/
 test-results/
 tests/
-scripts/
 *.log
 Dockerfile*

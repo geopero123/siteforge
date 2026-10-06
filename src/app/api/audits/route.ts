@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
+import {
+  dispatchQueuedAudit,
+  workerConfigurationError,
+} from "@/lib/audit/cloud-worker";
 import { requireUser } from "@/lib/supabase/server";
 import { auditInputSchema } from "@/lib/audit/schema";
 import { validateTarget } from "@/lib/security/url";
@@ -15,6 +20,9 @@ export async function POST(request: Request) {
       } catch (e) {
         throw new RequestError((e as Error).message);
       }
+    const workerError = workerConfigurationError();
+    if (workerError)
+      return NextResponse.json({ error: workerError }, { status: 503 });
     const { count, error: countError } = await db
       .from("audits")
       .select("id", { head: true, count: "exact" })
@@ -86,6 +94,9 @@ export async function POST(request: Request) {
         { status: 429 },
       );
     if (error) throw new Error(error.message);
+    after(async () => {
+      await dispatchQueuedAudit(data.id).catch(() => {});
+    });
     return NextResponse.json(data, { status: 202 });
   } catch (e) {
     return apiError(e);

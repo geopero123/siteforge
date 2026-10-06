@@ -6,6 +6,7 @@ export interface StoredIssue {
   status: "open" | "resolved" | "ignored";
 }
 export interface Snapshot {
+  workerError?: string | null;
   audit: {
     id: string;
     project_id: string;
