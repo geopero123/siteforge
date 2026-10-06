@@ -127,3 +127,23 @@ it("rejects an unauthorized recovery request before touching the database", asyn
   expect(response.status).toBe(401);
   expect(mocks.admin).not.toHaveBeenCalled();
 });
+
+it("refreshes a template without exposing database or AI credentials", async () => {
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+  const snapshot = vi.fn().mockResolvedValue({ snapshotId: "fresh-template" });
+  mocks.create.mockResolvedValue({ snapshot });
+  const response = await POST(
+    new Request("https://example.com/api/worker", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${process.env.WORKER_DISPATCH_SECRET}`,
+      },
+      body: JSON.stringify({ action: "refresh-snapshot" }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(mocks.create.mock.calls[0][0].env).toBeUndefined();
+  expect(mocks.create.mock.calls[0][0].networkPolicy).toBe("deny-all");
+  expect(mocks.admin).not.toHaveBeenCalled();
+  expect(snapshot).toHaveBeenCalledWith({ expiration: 0 });
+});
