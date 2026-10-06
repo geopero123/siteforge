@@ -1,6 +1,6 @@
 # SiteForge
 
-Website QA with real Chromium evidence, axe accessibility checks, measured layout/SEO/runtime findings, Gemini screenshot analysis, and saved Supabase reports. Next.js serves the workspace; a separate worker performs audits from a durable queue. Production has no sample-findings fallback.
+Website and code QA. Give SiteForge a website URL, a GitHub repository, or both: it audits the live site in real Chromium (axe accessibility, security headers, layout/SEO/runtime evidence, Gemini screenshot analysis), reads the whole repository (leaked secrets, vulnerable dependencies, risky code, CI and container configuration, AI code review), and reports every finding with its page or file and line, a suggested fix, and a patch where one can be verified. Next.js serves the workspace; a separate worker performs audits from a durable queue. Production has no sample-findings fallback.
 
 For a walkthrough of the request flow and main modules, see the [code guide](docs/CODE_GUIDE.md).
 
@@ -39,21 +39,33 @@ Running audits show a view-only Browser preview with actual Chromium viewport ca
 ## Audit behavior
 
 - Quick: homepage plus at most one linked page; three viewports; up to ten same-origin link checks.
-- Full: homepage plus at most four linked pages; three viewports; up to thirty link checks.
+- Full: homepage plus at most four more pages, chosen round-robin across site sections from links and `/sitemap.xml`; three viewports; up to thirty link checks.
+- Code only (`repository` mode): no browser; the full repository scan described below.
+- Any website mode with a repository attached (on the audit or the project) also runs the full repository scan, and links website findings to likely source files with suggested patches.
+- Homepage response checks: HSTS, Content-Security-Policy, X-Content-Type-Options, clickjacking protection, plain HTTP, version disclosure, Set-Cookie flags, and mixed content.
 - Mission: baseline homepage audit, then bounded Gemini-planned browser actions at mobile dimensions. Form submission requires the explicit checkbox. Purchases and destructive controls are blocked.
 - Viewports: desktop 1440×900, tablet 768×1024, mobile 390×844.
 - Screenshots are actual viewport captures and private signed URLs. Browser console errors, failed requests, axe violations, metadata, navigation timing, overflow, and clipping are measured.
 - AI visual findings are hypotheses with confidence capped at 0.85. Mission success requires exact observations cited from successful tool steps. Whether those observations establish the natural-language goal remains a model judgment; review its steps.
 - Missing AI configuration or failed checks produce warnings and a partial report. An incomplete report's score is labeled accordingly. A 404 page does not count as audited coverage.
-- Browser API actions are step/navigation/time bounded. Audits have five-minute deadlines, or fifteen minutes in Full mode. Worker shutdown cancels the active browser. Expired leases fail instead of replaying missions.
+- Browser API actions are step/navigation/time bounded. Audits have five-minute deadlines, fifteen minutes in Full mode, and ten minutes for code-only scans; website audits that also scan a repository get five extra minutes. Worker shutdown cancels the active browser. Expired leases fail instead of replaying missions.
+- Each audit makes at most `AI_MAX_CALLS_PER_AUDIT` model calls (default 60). Once that limit is hit, the remaining AI checks are skipped and the report shows a warning.
 
-Scores start at 100 in each of six categories. Deduct critical=30, high=15, medium=7, low=2, info=0 multiplied by confidence; round and clamp each category, then average them. Deduplicate before scoring. Resolved and ignored issues are excluded from the current score; the original score remains saved. This is an issue-based risk index, not a Lighthouse score or proof of complete coverage.
+Scores start at 100 in each category the audit can observe: performance, accessibility, SEO, UX, reliability, responsive and security for websites; security, reliability, code and dependencies for repositories; all of them for combined audits. Deduct critical=30, high=15, medium=7, low=2, info=0 multiplied by confidence; round and clamp each category, then average them. Deduplicate before scoring. Resolved and ignored issues are excluded from the current score; the original score remains saved. This is an issue-based risk index, not a Lighthouse score or proof of complete coverage.
 
-## Read-only repository investigation
+## Repository scanning
 
-Attach `owner/repository` in Project Detail. Public repositories work without a token. For a private repository, configure a fine-grained read-only `GITHUB_TOKEN`, comma-separated `GITHUB_REPOSITORIES`, and `GITHUB_TOKEN_USER_ID` set to the authorized user's Supabase UUID. The token is never used for another user or an unlisted repository. GitHub OAuth login does not grant repository access.
+Enter `owner/repo`, `owner/repo#branch`, or a `https://github.com/owner/repo` link (a `/tree/<branch>` link selects that branch) on the new-audit form or in Project Detail. Public repositories work without a token. For a private repository, configure a fine-grained read-only `GITHUB_TOKEN`, comma-separated `GITHUB_REPOSITORIES`, and `GITHUB_TOKEN_USER_ID` set to the authorized user's Supabase UUID. The token is never used for another user or an unlisted repository. GitHub OAuth login does not grant repository access.
 
-The worker retrieves an index, asks for relevant file paths, fetches at most four bounded source files, redacts common source credentials, and generates suggested diffs. Source correlations and patches require human review. Diffs are downloadable; no repository is modified. A hosted multi-user installation should replace the single-account token configuration with per-user GitHub App installations before offering private connections to additional accounts.
+The worker downloads one archive of the pinned commit (at most 60 MB compressed and 250 MB extracted; files over 400 KB are indexed but not read), then runs:
+
+1. **Secrets:** private keys, cloud, GitHub, Stripe, Slack, and AI provider tokens, plus hard-coded credentials. Values are masked in the report. Hits in tests and fixtures are reported as low severity, and placeholder or low-entropy values are ignored.
+2. **Code patterns:** SQL and command injection, eval, unsafe HTML, unsafe deserialization, disabled TLS verification, unverified JWTs, weak hashes, wildcard CORS, debug mode, and server secrets exposed through `NEXT_PUBLIC_`/`VITE_` variables.
+3. **Configuration:** committed `.env` files or `node_modules`, missing lockfiles, unbounded versions, `curl | sh` scripts, TypeScript strict mode, Dockerfiles that run as root, use unpinned images, or bake in secrets, GitHub Actions `pull_request_target` checkouts, script injection, missing permissions and unpinned third-party actions, and missing CI, tests, README, or `.gitignore`.
+4. **Dependencies:** locked versions from npm, Yarn, pnpm, pip, Poetry, uv, Pipfile, Cargo, Go, Bundler, and Composer are checked against [OSV.dev](https://osv.dev). Each finding names the advisories and an upgrade command. Development-only packages are lowered one severity step.
+5. **AI code review:** source files are reviewed in batches, riskiest paths first (auth, payments, API routes, database). `REPO_REVIEW_MAX_BATCHES` (default 8, about 40,000 characters each) bounds cost. Every AI finding must quote real code from the file it names, or it is discarded. A suggested patch is kept only if every line it removes exists in that file. Confidence is capped at 0.8.
+
+Findings link to the file and line on GitHub at the scanned commit. Patches can be downloaded; no repository is ever modified. The worker needs outbound HTTPS to `api.github.com`, `codeload.github.com`, and `api.osv.dev` in addition to Gemini. A hosted multi-user installation should replace the single-account token configuration with per-user GitHub App installations before offering private connections to additional accounts.
 
 ## Deployment
 
@@ -90,7 +102,6 @@ Database assertions are in `scripts/database-smoke.sql`; `database-bootstrap.sql
 
 The build uses Webpack because Turbopack process sockets were unavailable in the verification environment. No TypeScript checks are disabled. The live milestone still needs configured credentials: sign in → create project → queue audit → worker browser/AI → persist evidence → inspect the saved report.
 
-Known limits: no Lighthouse run, external-link crawling, authenticated target sessions, CAPTCHA solving, automated PRs, or scheduled scans. Redirects to another origin are blocked; same-origin link checks report the first response without following redirects. SPA network writes are blocked unless form submissions are authorized, which can limit some read-only GraphQL sites. Visual screenshots can include the audited page's visible data; audit only sites you are authorized to inspect.
+Known limits: no Lighthouse run, external-link crawling, authenticated target sessions, CAPTCHA solving, automated PRs, or scheduled scans. Repository scanning supports GitHub only and does not run the project's code, build, or tests. Redirects to another origin are blocked; same-origin link checks report the first response without following redirects. SPA network writes are blocked unless form submissions are authorized, which can limit some read-only GraphQL sites. Visual screenshots can include the audited page's visible data; audit only sites you are authorized to inspect.
 
 The remaining npm advisory is an unpatched development-only `braces` dependency under Next.js's ESLint plugin; five audit entries share this chain. Production dependency audit is tracked separately. No Next.js downgrade or forced major dependency change is used. [Advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
-# siteforge

@@ -20,6 +20,7 @@ export function IssueDetail({
   busy: boolean;
 }) {
   const f = issue.data;
+  const sourceFinding = f.url.startsWith("https://github.com/");
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -66,10 +67,20 @@ export function IssueDetail({
       <p>{f.description}</p>
       <small>
         {Math.round(f.confidence * 100)}% confidence ·{" "}
-        {f.viewport
-          ? `${f.viewport.width} × ${f.viewport.height}`
-          : "All viewports"}{" "}
+        {sourceFinding
+          ? "Source code"
+          : f.viewport
+            ? `${f.viewport.width} × ${f.viewport.height}`
+            : "All viewports"}{" "}
         · {issue.status}
+        {sourceFinding && (
+          <>
+            {" · "}
+            <a href={f.url} target="_blank" rel="noreferrer">
+              Open on GitHub ↗
+            </a>
+          </>
+        )}
       </small>
       <h3>Evidence</h3>
       {f.evidence.map((e, i) => {
@@ -83,7 +94,7 @@ export function IssueDetail({
             <div className="evidence">
               <span className="code">{e.type.toUpperCase()}</span>
               <br />
-              {e.detail}
+              {e.type === "source" ? <pre>{e.detail}</pre> : e.detail}
             </div>
           </div>
         );
@@ -98,10 +109,19 @@ export function IssueDetail({
       <p>{f.suggestedFix}</p>
       {f.sourceFiles.length > 0 && (
         <>
-          <h3>Likely source files</h3>
+          <h3>{sourceFinding ? "Location" : "Likely source files"}</h3>
           {f.sourceFiles.map((s) => (
             <div key={s.path} className="evidence">
-              {s.path}:{s.lines}
+              {sourceFinding ? (
+                <a href={f.url} target="_blank" rel="noreferrer">
+                  {s.path}
+                  {s.lines && ":" + s.lines} ↗
+                </a>
+              ) : (
+                <>
+                  {s.path}:{s.lines}
+                </>
+              )}
               <br />
               {s.reason}
             </div>
@@ -154,8 +174,8 @@ export function IssueDetail({
         </button>
       </div>
       <small style={{ display: "block", marginTop: 12 }}>
-        Recheck launches a complete quick scan. Compare the new report before
-        marking this issue resolved.
+        Recheck launches a new scan of the same targets. Compare the new report
+        before marking this issue resolved.
       </small>
     </aside>
   );

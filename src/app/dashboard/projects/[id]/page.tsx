@@ -29,11 +29,19 @@ export default async function Project({
         <div>
           <div className="eyebrow">PROJECT</div>
           <h1>{p.name}</h1>
-          <p className="mono">{p.url}</p>
+          <p className="mono">
+            {[p.url, p.repository].filter(Boolean).join(" · ")}
+          </p>
         </div>
         <Link
           className="button primary"
-          href={"/dashboard/new?url=" + encodeURIComponent(p.url)}
+          href={
+            "/dashboard/new?" +
+            new URLSearchParams({
+              ...(p.url ? { url: p.url } : {}),
+              ...(p.repository ? { repository: p.repository } : {}),
+            })
+          }
         >
           New audit →
         </Link>
@@ -49,7 +57,10 @@ export default async function Project({
             >
               <span className={"badge " + a.status}>{a.status}</span>
               <span className="issue-copy">
-                <strong>{a.mode} audit</strong>
+                <strong>
+                  {a.mode === "repository" ? "code" : a.mode} audit
+                  {a.mode !== "repository" && a.repository ? " + code" : ""}
+                </strong>
                 <small>{new Date(a.created_at).toLocaleString()}</small>
               </span>
               <span className="mono">{a.report?.score?.overall ?? "—"}</span>
@@ -58,7 +69,7 @@ export default async function Project({
           {!audits?.length && <p>This project has no audits yet.</p>}
         </section>
         <section className="panel">
-          <h2>Source investigation</h2>
+          <h2>GitHub repository</h2>
           <RepositoryForm id={id} initial={p.repository} />
         </section>
       </div>

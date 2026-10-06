@@ -24,7 +24,9 @@ export default async function Dashboard() {
         <div>
           <div className="eyebrow">YOUR WORKSPACE</div>
           <h1>Website quality, in focus.</h1>
-          <p>Every audit starts with your site and ends with evidence.</p>
+          <p>
+            Every audit starts with your site or code and ends with evidence.
+          </p>
         </div>
         <Link className="button primary" href="/dashboard/new">
           <Plus size={16} />
@@ -54,7 +56,9 @@ export default async function Dashboard() {
         <div className="empty">
           <ScanLine size={30} />
           <h2>Your first finding starts here.</h2>
-          <p>Create a project and scan its website to begin.</p>
+          <p>
+            Create a project and scan its website or GitHub repository to begin.
+          </p>
           <Link href="/dashboard/new" className="button">
             Start an audit →
           </Link>
@@ -64,7 +68,7 @@ export default async function Dashboard() {
           <table className="table">
             <thead>
               <tr>
-                <th>Website</th>
+                <th>Target</th>
                 <th>Mode</th>
                 <th>Status</th>
                 <th>Score</th>
@@ -75,7 +79,9 @@ export default async function Dashboard() {
               {rows.map((a) => (
                 <tr key={a.id}>
                   <td>
-                    <Link href={"/dashboard/audits/" + a.id}>{a.url} ↗</Link>
+                    <Link href={"/dashboard/audits/" + a.id}>
+                      {a.url ?? a.repository} ↗
+                    </Link>
                   </td>
                   <td>{a.mode}</td>
                   <td>

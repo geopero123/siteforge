@@ -55,8 +55,9 @@ export default async function Settings() {
             confidence: critical 30, high 15, medium 7, low 2, info 0.
           </p>
           <small>
-            The overall score averages six category scores. A high score with
-            limited coverage does not establish that a site is bug-free.
+            The overall score averages the categories the audit could observe:
+            seven for websites, four for repositories. A high score with limited
+            coverage does not establish that a site is bug-free.
           </small>
         </section>
       </div>

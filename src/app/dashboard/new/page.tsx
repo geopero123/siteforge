@@ -3,48 +3,57 @@ import { AuditForm } from "@/components/audit-form";
 export default async function NewAudit({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string }>;
+  searchParams: Promise<{ url?: string; repository?: string }>;
 }) {
   const session = await pageSession();
   if (!session) return null;
   const { db } = session;
   const { data, error } = await db
     .from("projects")
-    .select("id,name,url")
+    .select("id,name,url,repository")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  const { url } = await searchParams;
+  const { url, repository } = await searchParams;
   return (
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">BROWSER → EVIDENCE → FINDINGS</div>
-          <h1>Put your website to the test.</h1>
-          <p>Give SiteForge a URL. Get a report you can reproduce.</p>
+          <div className="eyebrow">WEBSITE + CODE → EVIDENCE → FIXES</div>
+          <h1>Put your website and code to the test.</h1>
+          <p>
+            Give SiteForge a URL, a GitHub repository, or both. Get every
+            problem with a fix.
+          </p>
         </div>
       </div>
       <div className="grid-2">
         <section className="panel">
-          <AuditForm projects={data ?? []} initialUrl={url} />
+          <AuditForm
+            projects={data ?? []}
+            initialUrl={url}
+            initialRepository={repository}
+          />
         </section>
         <aside className="panel" style={{ alignSelf: "start" }}>
           <h2>What happens next</h2>
           <div className="stack">
             <p>
               01 &nbsp; A worker opens your site in Chromium and captures each
-              viewport.
-            </p>
-            <p>
-              02 &nbsp; axe, network checks, and DOM measurements collect
+              viewport. axe, security headers, network and DOM checks collect
               objective evidence.
             </p>
             <p>
-              03 &nbsp; Gemini reviews actual screenshots and evidence for
-              additional issues.
+              02 &nbsp; The repository is downloaded read-only and checked for
+              leaked secrets, vulnerable dependencies (OSV.dev), risky code
+              patterns, CI and container problems.
             </p>
             <p>
-              04 &nbsp; Findings and private screenshots are saved to your
-              workspace.
+              03 &nbsp; Gemini reviews screenshots and source files. Every AI
+              claim must quote real code or evidence, or it is discarded.
+            </p>
+            <p>
+              04 &nbsp; Each finding links to its page or file and line, with a
+              suggested fix and, where possible, a patch you can download.
             </p>
           </div>
           <small>

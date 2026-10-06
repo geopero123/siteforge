@@ -29,9 +29,9 @@ export default async function Projects() {
             >
               <h2>{p.name} ↗</h2>
               <p className="mono" style={{ marginBottom: 0, fontSize: 12 }}>
-                {p.url}
+                {p.url ?? p.repository}
               </p>
-              {p.repository && <small>{p.repository}</small>}
+              {p.url && p.repository && <small>{p.repository}</small>}
             </Link>
           ))}
           {!data?.length && (

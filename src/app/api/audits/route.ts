@@ -8,7 +8,8 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const { db, user } = await requireUser();
     const input = auditInputSchema.parse(await request.json());
-    await validateTarget(input.url);
+    const url = input.mode === "repository" ? undefined : input.url;
+    if (url) await validateTarget(url);
     const { count, error: countError } = await db
       .from("audits")
       .select("id", { head: true, count: "exact" })
@@ -26,12 +27,27 @@ export async function POST(request: Request) {
         },
         { status: 429 },
       );
+    // Website audits also scan the project's repository when one is attached.
+    let repository = input.repository;
+    if (!repository) {
+      const { data: project, error: projectError } = await db
+        .from("projects")
+        .select("repository")
+        .eq("id", input.projectId)
+        .maybeSingle();
+      if (projectError)
+        throw new Error(
+          "Unable to load the project. Verify it exists and retry.",
+        );
+      repository = project?.repository ?? undefined;
+    }
     const { data, error } = await db
       .from("audits")
       .insert({
         project_id: input.projectId,
         user_id: user.id,
-        url: input.url,
+        url: url ?? null,
+        repository: repository ?? null,
         mode: input.mode,
         mission: input.mission,
         allow_form_submission: input.allowFormSubmission,

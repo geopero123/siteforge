@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/supabase/server";
 import { apiError, assertSameOrigin } from "@/lib/api";
 import { parseTarget } from "@/lib/security/url";
-import { repositorySchema } from "@/lib/github/repository";
+import { repositoryReferenceSchema as repositorySchema } from "@/lib/repository/reference";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -11,11 +11,14 @@ export async function POST(request: Request) {
     const input = z
       .object({
         name: z.string().trim().min(1).max(100),
-        url: z.url(),
+        url: z.url().optional(),
         repository: repositorySchema.optional(),
       })
+      .refine((value) => value.url || value.repository, {
+        message: "Provide a website URL, a GitHub repository, or both",
+      })
       .parse(await request.json());
-    parseTarget(input.url);
+    if (input.url) parseTarget(input.url);
     const { data, error } = await db
       .from("projects")
       .insert({ ...input, user_id: user.id })

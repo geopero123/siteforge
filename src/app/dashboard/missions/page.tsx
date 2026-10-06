@@ -4,7 +4,9 @@ export default async function Missions() {
   const session = await pageSession();
   if (!session) return null;
   const { db } = session;
-  const { data, error } = await db.from("projects").select("id,name,url");
+  const { data, error } = await db
+    .from("projects")
+    .select("id,name,url,repository");
   if (error) throw new Error(error.message);
   return (
     <>

@@ -22,7 +22,7 @@ In Supabase Auth URL Configuration, set the Site URL to `https://siteforge.madeb
 
 ## Audit worker
 
-The included `Dockerfile.worker` runs the persistent queue consumer with Chromium. Provision its required Supabase URL, service-role key, Gemini key and model settings through the worker host's secret environment configuration. Follow README's production network isolation and Chromium sandbox requirements before enabling public audits. Set `NODE_ENV=production`, leave `ALLOW_LOCAL_AUDITS` disabled, and set `AUDIT_EGRESS_ISOLATED=true` only after implementing and verifying actual egress restrictions.
+The included `Dockerfile.worker` runs the persistent queue consumer with Chromium. Provision its required Supabase URL, service-role key, Gemini key and model settings through the worker host's secret environment configuration. Follow README's production network isolation and Chromium sandbox requirements before enabling public audits. Set `NODE_ENV=production`, leave `ALLOW_LOCAL_AUDITS` disabled, and set `AUDIT_EGRESS_ISOLATED=true` only after implementing and verifying actual egress restrictions. Repository scans also need outbound HTTPS to `api.github.com`, `codeload.github.com` and `api.osv.dev`. Apply `supabase/migrations/20261006090000_repository_audits.sql` before deploying this version: the web app writes the new `audits.repository` column and `repository` mode.
 
 ## Verification
 

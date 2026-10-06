@@ -5,8 +5,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, ChevronRight } from "lucide-react";
-import { categories, severities, score } from "@/lib/audit/schema";
-import type { StoredIssue, Snapshot } from "./audit-types";
+import {
+  severities,
+  score,
+  websiteCategories,
+  type Category,
+} from "@/lib/audit/schema";
+import {
+  findingLocation,
+  type StoredIssue,
+  type Snapshot,
+} from "./audit-types";
 import { Activity } from "./audit-activity";
 import { IssueDetail } from "./issue-detail";
 import { LiveBrowser } from "./live-browser";
@@ -60,8 +69,12 @@ export function AuditView({ id }: { id: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: data.audit.project_id,
-          url: data.audit.url,
-          mode: "quick",
+          ...(data.audit.url ? { url: data.audit.url } : {}),
+          ...(data.audit.repository
+            ? { repository: data.audit.repository }
+            : {}),
+          // Missions need an objective; rechecks rerun the same targets as a quick scan.
+          mode: data.audit.mode === "repository" ? "repository" : "quick",
         }),
       });
       const d = await r.json();
@@ -111,16 +124,29 @@ export function AuditView({ id }: { id: string }) {
     (s) => s.viewport.name !== "live",
   );
   const running = ["queued", "running"].includes(audit.status);
+  const website = audit.mode !== "repository";
+  const scope = (
+    audit.report?.score.categories
+      ? Object.keys(audit.report.score.categories)
+      : websiteCategories
+  ) as Category[];
   const currentScore = score(
     issues.map((i) => ({ ...i.data, status: i.status })),
+    scope,
   );
+  const shownCategories = [
+    ...new Set([...scope, ...issues.map((i) => i.data.category)]),
+  ];
+  const locations = [
+    ...new Set(issues.map((i) => findingLocation(i.data, audit.url))),
+  ].sort();
   const issue = issues.find((i) => i.id === selected);
   const filtered = issues
     .filter(
       (i) =>
         (!severity || i.data.severity === severity) &&
         (!category || i.data.category === category) &&
-        (!page || i.data.url === page) &&
+        (!page || findingLocation(i.data, audit.url) === page) &&
         (!search ||
           (i.data.title + " " + i.data.description)
             .toLowerCase()
@@ -136,11 +162,16 @@ export function AuditView({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <div className="eyebrow">
-            {audit.mode.toUpperCase()} AUDIT / {audit.id.slice(0, 8)}
+            {audit.mode === "repository" ? "CODE" : audit.mode.toUpperCase()}{" "}
+            AUDIT / {audit.id.slice(0, 8)}
           </div>
-          <h1>{new URL(audit.url).hostname}</h1>
+          <h1>
+            {audit.url
+              ? new URL(audit.url).hostname
+              : audit.repository?.split("#")[0]}
+          </h1>
           <p className="mono" style={{ fontSize: 12 }}>
-            {audit.url}
+            {[audit.url, audit.repository].filter(Boolean).join(" · ")}
           </p>
         </div>
         <div className="stack" style={{ gap: 10, justifyItems: "end" }}>
@@ -176,18 +207,22 @@ export function AuditView({ id }: { id: string }) {
       ))}
       {running ? (
         <>
-          <LiveBrowser
-            frame={liveFrame}
-            queued={audit.status === "queued"}
-            activity={events.at(-1)?.message}
-          />
+          {website && (
+            <LiveBrowser
+              frame={liveFrame}
+              queued={audit.status === "queued"}
+              activity={events.at(-1)?.message}
+            />
+          )}
           <div className="grid-2">
             <section className="panel">
               <div className="panel-title">
                 <h2>
                   {audit.status === "queued"
                     ? "Waiting for a worker"
-                    : "Inspecting your website"}
+                    : website
+                      ? "Inspecting your website"
+                      : "Scanning your repository"}
                 </h2>
                 <LoaderCircle size={18} className="spinner" />
               </div>
@@ -203,25 +238,21 @@ export function AuditView({ id }: { id: string }) {
             <section className="panel" style={{ alignSelf: "start" }}>
               <h2>Agent activity</h2>
               {[
-                "browser",
-                "accessibility",
-                "visual",
-                "mission",
-                "code",
+                ...(website ? ["browser", "accessibility", "visual"] : []),
+                ...(audit.mode === "mission" ? ["mission"] : []),
+                ...(audit.repository ? ["code", "dependencies"] : []),
                 "report",
-              ]
-                .filter((a) => a !== "mission" || audit.mode === "mission")
-                .map((agent) => {
-                  const last = events.filter((e) => e.agent === agent).at(-1);
-                  return (
-                    <div className="agent-row" key={agent}>
-                      <span>{agent} agent</span>
-                      <span className={"badge " + (last?.status ?? "")}>
-                        {last?.status ?? "waiting"}
-                      </span>
-                    </div>
-                  );
-                })}
+              ].map((agent) => {
+                const last = events.filter((e) => e.agent === agent).at(-1);
+                return (
+                  <div className="agent-row" key={agent}>
+                    <span>{agent} agent</span>
+                    <span className={"badge " + (last?.status ?? "")}>
+                      {last?.status ?? "waiting"}
+                    </span>
+                  </div>
+                );
+              })}
               <p style={{ marginTop: 24 }}>
                 Completed checks and collected evidence appear here as the audit
                 runs.
@@ -238,7 +269,9 @@ export function AuditView({ id }: { id: string }) {
                   <div className="stat-label">
                     {audit.status === "partial"
                       ? "Score from completed checks"
-                      : "Current site score"}
+                      : website
+                        ? "Current site score"
+                        : "Current code score"}
                   </div>
                   <div className="big-score">
                     {currentScore.overall}
@@ -248,7 +281,7 @@ export function AuditView({ id }: { id: string }) {
                 </div>
                 <div>
                   <div className="score-grid">
-                    {categories.map((c) => (
+                    {scope.map((c) => (
                       <div key={c} className="score-item">
                         <span>
                           {c === "responsive" ? "Responsive design" : c}
@@ -265,8 +298,8 @@ export function AuditView({ id }: { id: string }) {
                     ))}
                   </div>
                   <p style={{ fontSize: 11, marginTop: 22, marginBottom: 0 }}>
-                    Severity × confidence deductions, averaged over six
-                    categories.{" "}
+                    Severity × confidence deductions, averaged over{" "}
+                    {scope.length} categories.{" "}
                     <Link
                       href="/dashboard/settings"
                       style={{ textDecoration: "underline" }}
@@ -278,6 +311,30 @@ export function AuditView({ id }: { id: string }) {
                 </div>
               </section>
               <p>{audit.report.summary}</p>
+              {audit.report.repository && (
+                <section className="panel" style={{ marginBottom: 24 }}>
+                  <h2>Repository</h2>
+                  <p className="mono" style={{ fontSize: 12 }}>
+                    <a
+                      href={`https://github.com/${audit.report.repository.name}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {audit.report.repository.name} ↗
+                    </a>{" "}
+                    · {audit.report.repository.branch}
+                    {audit.report.repository.commit &&
+                      " @ " + audit.report.repository.commit.slice(0, 7)}
+                  </p>
+                  <p style={{ marginBottom: 0 }}>
+                    {audit.report.repository.files} files indexed ·{" "}
+                    {audit.report.repository.analyzedFiles} checked by static
+                    rules · {audit.report.repository.reviewedFiles} AI-reviewed
+                    · {audit.report.repository.dependencies} dependency versions
+                    checked
+                  </p>
+                </section>
+              )}
               {audit.report.mission && (
                 <section className="panel" style={{ marginBottom: 24 }}>
                   <h2>
@@ -330,19 +387,19 @@ export function AuditView({ id }: { id: string }) {
                   onChange={(e) => setCategory(e.target.value)}
                 >
                   <option value="">All categories</option>
-                  {categories.map((c) => (
+                  {shownCategories.map((c) => (
                     <option key={c}>{c}</option>
                   ))}
                 </select>
                 <select
-                  aria-label="Filter page"
+                  aria-label="Filter location"
                   value={page}
                   onChange={(e) => setPage(e.target.value)}
                 >
-                  <option value="">All pages</option>
-                  {[...new Set(issues.map((i) => i.data.url))].map((u) => (
-                    <option value={u} key={u}>
-                      {new URL(u, audit.url).pathname}
+                  <option value="">All locations</option>
+                  {locations.map((location) => (
+                    <option value={location} key={location}>
+                      {location}
                     </option>
                   ))}
                 </select>
@@ -360,10 +417,10 @@ export function AuditView({ id }: { id: string }) {
                 <span className="issue-copy">
                   <strong>{i.data.title}</strong>
                   <small>
-                    {i.data.category} ·{" "}
-                    {new URL(i.data.url, audit.url).pathname} ·{" "}
-                    {i.data.viewport?.width ?? "all"}px ·{" "}
-                    {Math.round(i.data.confidence * 100)}% confidence
+                    {i.data.category} · {findingLocation(i.data, audit.url)}
+                    {i.data.viewport
+                      ? ` · ${i.data.viewport.width}px`
+                      : ""} · {Math.round(i.data.confidence * 100)}% confidence
                   </small>
                 </span>
                 <span className={"badge " + i.status}>{i.status}</span>

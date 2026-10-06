@@ -58,21 +58,24 @@ async function work() {
     active = new AbortController();
     let previewId: string | undefined;
     try {
-      await validateTarget(audit.url, local);
-      const project = checked(
-        await db
-          .from("projects")
-          .select("repository")
-          .eq("id", audit.project_id)
-          .single(),
-      ).data;
+      if (audit.url) await validateTarget(audit.url, local);
+      // Audits queued before repository targets existed rely on the project's setting.
+      const repository =
+        audit.repository ??
+        checked(
+          await db
+            .from("projects")
+            .select("repository")
+            .eq("id", audit.project_id)
+            .single(),
+        ).data?.repository;
       const result = await runAudit({
         signal: active.signal,
-        url: audit.url,
+        url: audit.url ?? undefined,
         mode: audit.mode,
         mission: audit.mission ?? undefined,
         allowFormSubmission: audit.allow_form_submission,
-        repository: project?.repository ?? undefined,
+        repository: repository ?? undefined,
         userId: audit.user_id,
         preview: async ({ image, url, viewport, capturedAt }) => {
           const path = `${audit.user_id}/${id}/live.png`;

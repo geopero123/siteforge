@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { repositoryReferenceSchema } from "../repository/reference";
 export const categories = [
   "performance",
   "accessibility",
@@ -6,7 +7,34 @@ export const categories = [
   "ux",
   "reliability",
   "responsive",
+  "security",
+  "code",
+  "dependencies",
 ] as const;
+export type Category = (typeof categories)[number];
+// Each audit is scored only over the categories its checks can observe.
+export const websiteCategories: Category[] = [
+  "performance",
+  "accessibility",
+  "seo",
+  "ux",
+  "reliability",
+  "responsive",
+  "security",
+];
+export const repositoryCategories: Category[] = [
+  "security",
+  "reliability",
+  "code",
+  "dependencies",
+];
+export function scoreScope(website: boolean, repository: boolean) {
+  return categories.filter(
+    (category) =>
+      (website && websiteCategories.includes(category)) ||
+      (repository && repositoryCategories.includes(category)),
+  );
+}
 export const severities = [
   "critical",
   "high",
@@ -24,6 +52,8 @@ export const evidenceSchema = z.object({
     "metadata",
     "metric",
     "source",
+    "dependency",
+    "header",
   ]),
   detail: z.string().max(4000),
   reference: z.string().max(1000).optional(),
@@ -55,11 +85,13 @@ export const reportSchema = z.object({
   issues: z.array(findingSchema).max(60),
   summary: z.string().max(5000),
 });
+export const auditModes = ["quick", "full", "mission", "repository"] as const;
 export const auditInputSchema = z
   .object({
     projectId: z.uuid(),
-    url: z.url().max(2000),
-    mode: z.enum(["quick", "full", "mission"]),
+    url: z.url().max(2000).optional(),
+    repository: repositoryReferenceSchema.optional(),
+    mode: z.enum(auditModes),
     mission: z.string().max(1000).optional(),
     allowFormSubmission: z.boolean().default(false),
   })
@@ -69,6 +101,18 @@ export const auditInputSchema = z
         code: "custom",
         message: "Provide a mission objective",
         path: ["mission"],
+      });
+    if (input.mode === "repository" && !input.repository)
+      context.addIssue({
+        code: "custom",
+        message: "Provide a GitHub repository to scan",
+        path: ["repository"],
+      });
+    if (input.mode !== "repository" && !input.url)
+      context.addIssue({
+        code: "custom",
+        message: "Provide a website URL",
+        path: ["url"],
       });
   });
 export type AuditInput = z.infer<typeof auditInputSchema>;
@@ -111,11 +155,14 @@ export function deduplicate(findings: Finding[]): Finding[] {
   }
   return [...findingsByKey.values()];
 }
-export function score(issues: Array<Finding & { status?: string }>) {
+export function score(
+  issues: Array<Finding & { status?: string }>,
+  scope: readonly Category[] = websiteCategories,
+) {
   // Only open findings lower the score, weighted by severity and confidence.
   const weights = { critical: 30, high: 15, medium: 7, low: 2, info: 0 };
   const categoryScores = Object.fromEntries(
-    categories.map((category) => {
+    scope.map((category) => {
       const totalPenalty = issues
         .filter(
           (issue) =>
@@ -130,12 +177,14 @@ export function score(issues: Array<Finding & { status?: string }>) {
       const categoryScore = Math.max(0, Math.round(100 - totalPenalty));
       return [category, categoryScore];
     }),
-  ) as Record<(typeof categories)[number], number>;
+  ) as Partial<Record<Category, number>>;
+  const values = Object.values(categoryScores) as number[];
   return {
-    overall: Math.round(
-      Object.values(categoryScores).reduce((total, value) => total + value, 0) /
-        categories.length,
-    ),
+    overall: values.length
+      ? Math.round(
+          values.reduce((total, value) => total + value, 0) / values.length,
+        )
+      : 100,
     categories: categoryScores,
   };
 }

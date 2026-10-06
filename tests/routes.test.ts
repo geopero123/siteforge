@@ -52,6 +52,10 @@ it("returns payment-required when database credit enforcement rejects an audit",
     eq: vi.fn(),
     insert: vi.fn(),
     in: vi.fn(async () => ({ count: 0, error: null })),
+    maybeSingle: vi.fn(async () => ({
+      data: { repository: null },
+      error: null,
+    })),
     single: vi.fn(async () => ({
       data: null,
       error: { message: "TEST_CREDITS_REQUIRED" },

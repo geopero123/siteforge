@@ -49,7 +49,7 @@ export class GeminiProvider implements AIProvider {
     images: Buffer[] = [],
   ): Promise<T> {
     const parts: Part[] = [
-      { text: redactSecrets(prompt.slice(0, 45000)) },
+      { text: redactSecrets(prompt.slice(0, 160000)) },
       ...images.slice(0, 3).map((image) => ({
         inlineData: { mimeType: "image/png", data: image.toString("base64") },
       })),
@@ -78,7 +78,7 @@ export class GeminiProvider implements AIProvider {
           systemInstruction: analystInstructions,
           responseMimeType: "application/json",
           responseJsonSchema: z.toJSONSchema(schema),
-          maxOutputTokens: 10000,
+          maxOutputTokens: 16000,
         },
       });
       try {
@@ -110,5 +110,40 @@ export class GeminiProvider implements AIProvider {
     const content = response.candidates?.[0]?.content;
     if (!content) throw new Error("Gemini returned no mission response");
     return content;
+  }
+}
+
+/** Caps model calls per audit so one run cannot produce unbounded AI spend. */
+export class BudgetedProvider implements AIProvider {
+  calls = 0;
+  constructor(
+    private inner: AIProvider,
+    readonly maxCalls = Number(process.env.AI_MAX_CALLS_PER_AUDIT) || 60,
+  ) {}
+  private spend() {
+    if (++this.calls > this.maxCalls)
+      throw new Error(
+        `AI call budget of ${this.maxCalls} reached for this audit; remaining AI checks were skipped.`,
+      );
+  }
+  generate(prompt: string) {
+    this.spend();
+    return this.inner.generate(prompt);
+  }
+  generateStructured<T>(
+    prompt: string,
+    schema: z.ZodType<T>,
+    images?: Buffer[],
+  ) {
+    this.spend();
+    return this.inner.generateStructured(prompt, schema, images);
+  }
+  analyzeImage<T>(prompt: string, images: Buffer[], schema: z.ZodType<T>) {
+    this.spend();
+    return this.inner.analyzeImage(prompt, images, schema);
+  }
+  callTools(history: Content[], tools: FunctionDeclaration[]) {
+    this.spend();
+    return this.inner.callTools(history, tools);
   }
 }

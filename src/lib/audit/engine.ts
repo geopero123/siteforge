@@ -1,19 +1,26 @@
 import { BrowserSession, viewports } from "../browser/session";
 import { startBrowserPreview, type PreviewFrame } from "../browser/preview";
-import { GeminiProvider, type AIProvider } from "../ai/provider";
+import {
+  BudgetedProvider,
+  GeminiProvider,
+  type AIProvider,
+} from "../ai/provider";
 import { runMission } from "../ai/mission";
 import { investigateRepository } from "../github/repository";
-import { measuredFindings } from "./deterministic";
+import { scanRepository, type RepositoryReport } from "../repository/scan";
+import type { RepositorySnapshot } from "../repository/github";
+import { headerFindings, measuredFindings } from "./deterministic";
 import {
   deduplicate,
   reportSchema,
   score,
+  scoreScope,
   type Finding,
   type AuditEvent,
 } from "./schema";
 export interface EngineOptions {
-  url: string;
-  mode: "quick" | "full" | "mission";
+  url?: string;
+  mode: "quick" | "full" | "mission" | "repository";
   mission?: string;
   allowFormSubmission?: boolean;
   repository?: string;
@@ -31,8 +38,23 @@ export interface EngineOptions {
   page: (url: string, data: unknown) => Promise<void>;
   step: (tool: string, args: unknown, result: unknown) => Promise<void>;
 }
+export function auditTimeout(mode: EngineOptions["mode"], repository: boolean) {
+  const base =
+    mode === "full" ? 900000 : mode === "repository" ? 600000 : 300000;
+  // Website audits that also scan a repository get extra time for the code stage.
+  return base + (repository && mode !== "repository" ? 300000 : 0);
+}
 export async function runAudit(options: EngineOptions) {
-  const browser = new BrowserSession(options.url, options.allowFormSubmission);
+  if (options.mode === "repository" ? !options.repository : !options.url)
+    throw new Error(
+      options.mode === "repository"
+        ? "Repository scans need a GitHub repository."
+        : "Website audits need a URL.",
+    );
+  const browser =
+    options.mode !== "repository" && options.url
+      ? new BrowserSession(options.url, options.allowFormSubmission)
+      : undefined;
   const controller = new AbortController();
   const timer = setTimeout(
     () =>
@@ -41,7 +63,7 @@ export async function runAudit(options: EngineOptions) {
           "Audit deadline reached. Review saved evidence and rerun with a smaller scope.",
         ),
       ),
-    options.timeoutMs ?? (options.mode === "full" ? 900000 : 300000),
+    options.timeoutMs ?? auditTimeout(options.mode, !!options.repository),
   );
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
@@ -82,24 +104,158 @@ export async function runAudit(options: EngineOptions) {
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", abort);
-    await browser.close();
+    await browser?.close();
   }
 }
-async function collectAudit(options: EngineOptions, browser: BrowserSession) {
+type Mission = Awaited<ReturnType<typeof runMission>>;
+interface AuditState {
+  findings: Finding[];
+  coverage: string[];
+  warnings: string[];
+  checks: Record<string, string>;
+  summary: string;
+  mission?: Mission;
+}
+async function collectAudit(options: EngineOptions, browser?: BrowserSession) {
+  const state: AuditState = {
+    findings: [],
+    coverage: [],
+    warnings: [],
+    checks: {},
+    summary: "",
+  };
+  let ai: AIProvider | undefined;
+  try {
+    ai = new BudgetedProvider(options.ai ?? new GeminiProvider());
+  } catch (e) {
+    state.warnings.push((e as Error).message);
+  }
+  if (browser) await auditWebsite(options, browser, ai, state);
+  // Correlation enriches these website findings in place with source references.
+  const websiteFindings = deduplicate(state.findings);
+  state.findings = [...websiteFindings];
+  let repository: RepositoryReport | undefined;
+  if (options.repository) {
+    try {
+      const scan = await scanRepository({
+        repository: options.repository,
+        userId: options.userId,
+        ai,
+        signal: options.signal,
+        event: options.event,
+      });
+      repository = scan.report;
+      state.findings.push(...scan.findings);
+      state.warnings.push(...scan.warnings);
+      Object.assign(state.checks, scan.checks);
+      state.coverage.push(
+        `${scan.report.name}@${scan.report.branch}: ${scan.report.files} files indexed, ${scan.report.analyzedFiles} analyzed, ${scan.report.reviewedFiles} AI-reviewed, ${scan.report.dependencies} dependencies checked`,
+      );
+      if (!browser) state.summary = scan.summary;
+      if (browser && ai && websiteFindings.length)
+        await correlateWithSource(
+          ai,
+          scan.snapshot,
+          websiteFindings,
+          state,
+          options.event,
+        );
+    } catch (e) {
+      options.signal?.throwIfAborted();
+      // Without a website stage there is nothing to report, so fail the audit.
+      if (!browser) throw e;
+      state.warnings.push(`Repository scan failed: ${(e as Error).message}`);
+    }
+  }
+  const issues = deduplicate(state.findings);
+  await options.event({
+    agent: "report",
+    message: `Normalized ${issues.length} evidence-backed findings`,
+    status: "complete",
+  });
+  return {
+    issues,
+    score: score(issues, scoreScope(!!browser, !!repository)),
+    summary:
+      state.summary ||
+      (browser
+        ? "Deterministic scan complete. Inspect evidence and coverage for each finding."
+        : "Repository scan complete. Review each finding's source location and suggested fix."),
+    coverage: state.coverage,
+    warnings: state.warnings,
+    mission: state.mission,
+    repository,
+    checks: {
+      ...(browser
+        ? {
+            lighthouse: "Not run; browser navigation timing measured instead",
+            visual: ai
+              ? "Gemini screenshot analysis attempted"
+              : "Unavailable: configure Gemini",
+            externalLinks: "Not checked; same-origin only",
+            securityHeaders: "Homepage response headers and cookies checked",
+          }
+        : {}),
+      ...state.checks,
+    },
+  };
+}
+// Ties website findings to likely source files and proposes patches.
+async function correlateWithSource(
+  ai: AIProvider,
+  snapshot: RepositorySnapshot,
+  findings: Finding[],
+  state: AuditState,
+  event: EngineOptions["event"],
+) {
+  await event({
+    agent: "code",
+    message: "Matching website findings to source files",
+    status: "running",
+  });
+  try {
+    const repo = await investigateRepository(ai, snapshot, findings);
+    const fixes = await ai.generateStructured(
+      `Investigate evidence-supported causes and propose unified diff patches. Do not pretend changes have been applied. ONLY reference retrieved files, and use exact source context. Return findings enriched with sourceFiles and optional patch, preserving evidence. Findings: ${JSON.stringify(findings.slice(0, 10))}. Read-only source evidence: ${JSON.stringify(repo)}`,
+      reportSchema,
+    );
+    // Accept source references only when the file was actually retrieved.
+    const retrievedPaths = new Set(repo.files.map((file) => file.path));
+    let matched = 0;
+    for (const fix of fixes.issues) {
+      const original = findings.find(
+        (f) => f.title === fix.title && f.url === fix.url,
+      );
+      if (original) {
+        original.sourceFiles = fix.sourceFiles.filter((f) =>
+          retrievedPaths.has(f.path),
+        );
+        if (original.sourceFiles.length) {
+          original.patch = fix.patch;
+          matched++;
+        }
+      }
+    }
+    await event({
+      agent: "code",
+      message: `Linked ${matched} website findings to source files`,
+      status: "complete",
+    });
+  } catch (e) {
+    state.warnings.push(`Source correlation failed: ${(e as Error).message}`);
+  }
+}
+async function auditWebsite(
+  options: EngineOptions,
+  browser: BrowserSession,
+  ai: AIProvider | undefined,
+  state: AuditState,
+) {
   const { event } = options;
-  const findings: Finding[] = [];
-  const coverage: string[] = [];
-  const warnings: string[] = [];
-  let summary = "";
-  let mission: Awaited<ReturnType<typeof runMission>> | undefined;
-  let ai: AIProvider | undefined = options.ai;
+  const { findings, coverage, warnings } = state;
+  const url = options.url!;
   let stopPreview: (() => Promise<void>) | undefined;
   let previewWarning = false;
-  try {
-    ai ??= new GeminiProvider();
-  } catch (e) {
-    warnings.push((e as Error).message);
-  }
   await event({
     agent: "browser",
     message: "Launching isolated browser",
@@ -124,20 +280,30 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
         3000,
         options.signal,
       );
-    const initialResponse = await browser.navigateTo(options.url);
+    const initialResponse = await browser.navigateTo(url);
     if (initialResponse.status && initialResponse.status >= 400)
       throw new Error(
         `Homepage returned HTTP ${initialResponse.status}. Check the URL and site availability.`,
       );
     const links = await browser.getLinks();
+    const sitemap = options.mode === "full" ? await browser.sitemapUrls() : [];
     await event({
       agent: "browser",
-      message: `Loaded homepage; discovered ${links.length} links`,
+      message: `Loaded homepage; discovered ${links.length} links${sitemap.length ? ` and ${sitemap.length} sitemap URLs` : ""}`,
       status: "complete",
     });
+    findings.push(
+      ...headerFindings(
+        browser.page.url(),
+        initialResponse.headers,
+        initialResponse.cookies,
+        browser.insecureRequests,
+      ),
+    );
     const pageUrls = selectAuditPages(
-      options.url,
+      url,
       links,
+      sitemap,
       browser.origin,
       options.mode,
     );
@@ -220,7 +386,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
                 attachVisualEvidence(finding, actualUrl, viewport, reference),
               ),
             );
-            summary = report.summary;
+            state.summary = report.summary;
             await event({
               agent: "visual",
               message: `Analysis complete: ${report.issues.length} additional hypotheses`,
@@ -238,6 +404,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
       }
       browser.consoleErrors = [];
       browser.failedRequests = [];
+      browser.insecureRequests = [];
     }
     // Link checks keep redirects visible rather than following them.
     for (const link of links
@@ -259,7 +426,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
             category: "reliability",
             severity: "medium",
             confidence: 1,
-            url: options.url,
+            url,
             viewport: null,
             description: `Link returned HTTP ${linkResponse.status}`,
             evidence: [
@@ -268,7 +435,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
                 detail: `GET ${link}: ${linkResponse.status}`,
               },
             ],
-            reproductionSteps: [`Open ${options.url}`, `Follow ${link}`],
+            reproductionSteps: [`Open ${url}`, `Follow ${link}`],
             suggestedFix: "Correct the target URL or restore the missing page.",
             sourceFiles: [],
           });
@@ -284,6 +451,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
       status: "complete",
     });
     if (options.mode === "mission" && options.mission) {
+      let mission: Mission;
       if (!ai) {
         mission = {
           outcome: "FAILED",
@@ -291,7 +459,7 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
           evidence: [],
         };
       } else {
-        await browser.navigateTo(options.url);
+        await browser.navigateTo(url);
         await browser.setViewport(390, 844);
         mission = await runMission(
           ai,
@@ -318,95 +486,65 @@ async function collectAudit(options: EngineOptions, browser: BrowserSession) {
         warnings.push(
           `Mission ${mission.outcome.toLowerCase()}: ${mission.summary}`,
         );
+      state.mission = mission;
     }
-    let normalized = deduplicate(findings);
-    if (ai && options.repository) {
-      await event({
-        agent: "code",
-        message: "Retrieving likely source files from GitHub",
-        status: "running",
-      });
-      try {
-        const repo = await investigateRepository(
-          ai,
-          options.repository,
-          normalized,
-          options.userId,
-        );
-        const fixes = await ai.generateStructured(
-          `Investigate evidence-supported causes and propose unified diff patches. Do not pretend changes have been applied. ONLY reference retrieved files, and use exact source context. Return findings enriched with sourceFiles and optional patch, preserving evidence. Findings: ${JSON.stringify(normalized.slice(0, 8))}. Read-only source evidence: ${JSON.stringify(repo)}`,
-          reportSchema,
-        );
-        // Accept source references only when the file was actually retrieved.
-        const retrievedPaths = new Set(repo.files.map((file) => file.path));
-        for (const fix of fixes.issues) {
-          const original = normalized.find(
-            (f) => f.title === fix.title && f.url === fix.url,
-          );
-          if (original) {
-            original.sourceFiles = fix.sourceFiles.filter((f) =>
-              retrievedPaths.has(f.path),
-            );
-            if (original.sourceFiles.length) original.patch = fix.patch;
-          }
-        }
-        await event({
-          agent: "code",
-          message: "Source investigation and suggested patches complete",
-          status: "complete",
-        });
-      } catch (e) {
-        warnings.push((e as Error).message);
-      }
-    }
-    normalized = deduplicate(normalized);
-    await event({
-      agent: "report",
-      message: `Normalized ${normalized.length} evidence-backed findings`,
-      status: "complete",
-    });
-    return {
-      issues: normalized,
-      score: score(normalized),
-      summary:
-        summary ||
-        "Deterministic scan complete. Inspect evidence and coverage for each finding.",
-      coverage,
-      warnings,
-      mission,
-      checks: {
-        lighthouse: "Not run; browser navigation timing measured instead",
-        visual: ai
-          ? "Gemini screenshot analysis attempted"
-          : "Unavailable: configure Gemini",
-        externalLinks: "Not checked; same-origin only",
-      },
-    };
   } finally {
     await stopPreview?.();
     await browser.close();
   }
 }
 
-// Keep the homepage plus a small, same-origin sample of safe-looking links.
-function selectAuditPages(
+const skippedPath =
+  /\/(logout|log-out|signout|sign-out|delete|remove|unsubscribe|download)(\/|$|\?)/i;
+const nonPage =
+  /\.(pdf|zip|gz|tar|rar|7z|png|jpe?g|gif|svg|webp|avif|ico|mp[34]|mov|webm|wav|xml|json|txt|csv|docx?|xlsx?|pptx?|dmg|exe|apk)$/i;
+
+/**
+ * Picks the homepage plus a spread of same-origin pages. Candidates are grouped
+ * by first path segment and taken round-robin, so a full audit covers different
+ * sections (/blog, /pricing, /docs) instead of the first few navigation links.
+ */
+export function selectAuditPages(
   homepageUrl: string,
   links: string[],
+  sitemap: string[],
   origin: string,
   mode: EngineOptions["mode"],
 ) {
   const additionalPageLimit = mode === "full" ? 4 : mode === "quick" ? 1 : 0;
-  return [
-    homepageUrl,
-    ...links
-      .filter(
-        (link) =>
-          new URL(link).origin === origin &&
-          link !== homepageUrl &&
-          !/logout|delete|signout|download/i.test(link),
-      )
-      .slice(0, additionalPageLimit),
-  ];
+  const key = (link: string) => {
+    const u = new URL(link);
+    return u.origin + u.pathname.replace(/\/+$/, "") + u.search;
+  };
+  const seen = new Set([key(homepageUrl)]);
+  const groups = new Map<string, string[]>();
+  for (const link of [...links, ...sitemap]) {
+    let parsed: URL;
+    try {
+      parsed = new URL(link);
+    } catch {
+      continue;
+    }
+    if (
+      parsed.origin !== origin ||
+      skippedPath.test(parsed.pathname) ||
+      nonPage.test(parsed.pathname) ||
+      seen.has(key(link))
+    )
+      continue;
+    seen.add(key(link));
+    parsed.hash = "";
+    const section = parsed.pathname.split("/")[1] ?? "";
+    groups.set(section, [...(groups.get(section) ?? []), parsed.href]);
+  }
+  const picked: string[] = [];
+  const queues = [...groups.values()];
+  while (picked.length < additionalPageLimit && queues.some((q) => q.length))
+    for (const queue of queues) {
+      const next = queue.shift();
+      if (next && picked.length < additionalPageLimit) picked.push(next);
+    }
+  return [homepageUrl, ...picked];
 }
 
 // Tie visual hypotheses to the screenshot we captured, not model-supplied references.

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { browserDb } from "@/lib/supabase/client";
+import { formatRepository, parseRepository } from "@/lib/repository/reference";
 export function RepositoryForm({
   id,
   initial,
@@ -18,15 +19,24 @@ export function RepositoryForm({
         e.preventDefault();
         setBusy(true);
         try {
-          if (repo && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))
-            throw new Error("Use owner/repository");
+          const normalized = repo.trim()
+            ? formatRepository(parseRepository(repo))
+            : null;
           const { error } = await browserDb()
             .from("projects")
-            .update({ repository: repo || null })
+            .update({ repository: normalized })
             .eq("id", id);
-          if (error) throw error;
+          if (error)
+            throw new Error(
+              error.message.includes("projects_target_check")
+                ? "A project needs a website URL or a repository."
+                : error.message,
+            );
+          setRepo(normalized ?? "");
           setMessage(
-            "Repository saved. Future audits will investigate relevant files.",
+            normalized
+              ? "Repository saved. Website audits will also scan its code and link findings to source files."
+              : "Repository removed.",
           );
         } catch (e) {
           setMessage((e as Error).message);
@@ -40,13 +50,14 @@ export function RepositoryForm({
         <input
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
-          placeholder="owner/repository"
+          placeholder="owner/repo or https://github.com/owner/repo"
         />
       </label>
       <small>
         Public repositories work without a token. Private repositories require a
-        a worker connection authorized for your account. Suggested diffs are
-        never applied automatically.
+        worker connection authorized for your account. Add #branch to scan a
+        branch other than the default. Suggested diffs are never applied
+        automatically.
       </small>
       <button className="button" disabled={busy}>
         Save repository

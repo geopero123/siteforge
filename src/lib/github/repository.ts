@@ -1,91 +1,42 @@
 import { z } from "zod";
 import type { AIProvider } from "../ai/provider";
 import type { Finding } from "../audit/schema";
+import type { RepositorySnapshot } from "../repository/github";
+import { isAnalyzable } from "../repository/rules";
 import { redactSecrets } from "../security/redact";
-export const repositorySchema = z
-  .string()
-  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "Use owner/repository");
+export { repositoryReferenceSchema as repositorySchema } from "../repository/reference";
 
-async function fetchGitHubJson(path: string, token?: string) {
-  const response = await fetch("https://api.github.com/" + path, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok)
-    throw new Error(
-      `GitHub API ${response.status}: check repository visibility and worker token permissions.`,
-    );
-  return response.json() as Promise<unknown>;
-}
+/** Picks the source files most likely behind website findings, from a fetched snapshot. */
 export async function investigateRepository(
   ai: AIProvider,
-  repository: string,
+  snapshot: RepositorySnapshot,
   findings: Finding[],
-  userId?: string,
 ) {
-  repositorySchema.parse(repository);
-  // A worker token is available only to its configured user and repositories.
-  const allowedRepositories = (process.env.GITHUB_REPOSITORIES ?? "")
-    .split(",")
-    .map((repositoryName) => repositoryName.trim().toLowerCase());
-  const token =
-    userId &&
-    userId === process.env.GITHUB_TOKEN_USER_ID &&
-    allowedRepositories.includes(repository.toLowerCase())
-      ? process.env.GITHUB_TOKEN
-      : undefined;
-  const repositoryMetadata = (await fetchGitHubJson(
-    `repos/${repository}`,
-    token,
-  )) as {
-    default_branch: string;
-  };
-  const tree = (await fetchGitHubJson(
-    `repos/${repository}/git/trees/${encodeURIComponent(repositoryMetadata.default_branch)}?recursive=1`,
-    token,
-  )) as {
-    tree: Array<{ path: string; type: string; size?: number }>;
-    truncated: boolean;
-  };
   // Keep a bounded index of source files for the model to choose from.
-  const sourcePaths = tree.tree
+  const sourcePaths = snapshot.files
     .filter(
-      (entry) =>
-        entry.type === "blob" &&
-        /\.(tsx?|jsx?|css|html)$/.test(entry.path) &&
-        !/(node_modules|vendor|\.env|lock)/.test(entry.path) &&
-        (!entry.size || entry.size < 25000),
+      (file) =>
+        isAnalyzable(file) &&
+        /\.(tsx?|jsx?|vue|svelte|astro|css|scss|html|php|erb|py)$/.test(
+          file.path,
+        ) &&
+        file.size < 60000,
     )
-    .slice(0, 1200)
-    .map((entry) => entry.path);
+    .slice(0, 1500)
+    .map((file) => file.path);
   const selection = await ai.generateStructured(
-    `Select up to 4 likely source files to investigate these findings. Only select exact paths from the repository index. Findings: ${JSON.stringify(findings.slice(0, 8))}. Index: ${JSON.stringify(sourcePaths)}`,
-    z.object({ paths: z.array(z.string()).max(4) }),
+    `Select up to 6 likely source files to investigate these website findings. Only select exact paths from the repository index. Findings: ${JSON.stringify(findings.slice(0, 10))}. Index: ${JSON.stringify(sourcePaths)}`,
+    z.object({ paths: z.array(z.string()).max(6) }),
   );
-  // Validate model-selected paths against the index before fetching their contents.
-  const files = [];
-  for (const path of selection.paths.filter((path) =>
-    sourcePaths.includes(path),
-  )) {
-    const file = (await fetchGitHubJson(
-      `repos/${repository}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(repositoryMetadata.default_branch)}`,
-      token,
-    )) as { content?: string; encoding: string };
-    if (file.encoding === "base64" && file.content)
-      files.push({
-        path,
-        content: redactSecrets(
-          Buffer.from(file.content, "base64").toString("utf8").slice(0, 20000),
-        ),
-      });
-  }
-  return {
-    files,
-    branch: repositoryMetadata.default_branch,
-    truncated: tree.truncated,
-  };
+  // Validate model-selected paths against the index before using their contents.
+  const allowed = new Set(sourcePaths);
+  const files = snapshot.files
+    .filter(
+      (file) => allowed.has(file.path) && selection.paths.includes(file.path),
+    )
+    .map((file) => ({
+      path: file.path,
+      content: redactSecrets(file.text!.slice(0, 20000)),
+    }));
+  return { files, branch: snapshot.branch };
 }

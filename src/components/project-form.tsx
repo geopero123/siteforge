@@ -18,7 +18,7 @@ export function ProjectForm() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: values.get("name"),
-              url: values.get("url"),
+              ...(values.get("url") ? { url: values.get("url") } : {}),
               ...(values.get("repository")
                 ? { repository: values.get("repository") }
                 : {}),
@@ -40,17 +40,16 @@ export function ProjectForm() {
         <input name="name" required maxLength={100} />
       </label>
       <label>
-        Website URL
-        <input
-          type="url"
-          name="url"
-          required
-          placeholder="https://example.com"
-        />
+        Website URL <small>optional if you add a repository</small>
+        <input type="url" name="url" placeholder="https://example.com" />
       </label>
       <label>
-        Repository <small>optional · owner/repository</small>
-        <input name="repository" placeholder="your-team/website" />
+        GitHub repository{" "}
+        <small>optional · owner/repo or github.com link</small>
+        <input
+          name="repository"
+          placeholder="https://github.com/your-team/website"
+        />
       </label>
       <button disabled={busy} className="button primary">
         Create project →

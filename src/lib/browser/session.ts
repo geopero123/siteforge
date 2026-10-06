@@ -12,6 +12,7 @@ export class BrowserSession {
   origin: string;
   consoleErrors: string[] = [];
   failedRequests: Array<{ url: string; error: string }> = [];
+  insecureRequests: string[] = [];
   budget = new ToolBudget();
   private allowLocal: boolean;
   private ids = new Map<string, ReturnType<Page["locator"]>>();
@@ -76,6 +77,14 @@ export class BrowserSession {
       if (this.consoleErrors.length < 60)
         this.consoleErrors.push(e.message.slice(0, 1000));
     });
+    this.page.on("request", (r) => {
+      if (
+        r.url().startsWith("http:") &&
+        this.page.url().startsWith("https:") &&
+        this.insecureRequests.length < 30
+      )
+        this.insecureRequests.push(r.url().split("?")[0]);
+    });
     this.page.on("requestfailed", (r) => {
       if (this.failedRequests.length < 60)
         this.failedRequests.push({
@@ -102,7 +111,45 @@ export class BrowserSession {
       waitUntil: "domcontentloaded",
     });
     await this.page.waitForTimeout(600);
-    return { url: this.page.url(), status: response?.status() };
+    const headerList = (await response?.headersArray()) ?? [];
+    return {
+      url: this.page.url(),
+      status: response?.status(),
+      headers: Object.fromEntries(
+        headerList.map(({ name, value }) => [name.toLowerCase(), value]),
+      ),
+      cookies: headerList
+        .filter(({ name }) => name.toLowerCase() === "set-cookie")
+        .map(({ value }) => parseSetCookie(value)),
+    };
+  }
+  // Sitemaps list the pages a site considers important; links alone favor navigation.
+  async sitemapUrls(limit = 200) {
+    try {
+      const target = await validateTarget(
+        new URL("/sitemap.xml", this.origin).href,
+        this.allowLocal,
+      );
+      const response = await this.page
+        .context()
+        .request.get(target.href, { maxRedirects: 0, timeout: 8000 });
+      const body = response.ok()
+        ? (await response.text()).slice(0, 2_000_000)
+        : "";
+      await response.dispose();
+      return [...body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)]
+        .map((match) => match[1].replace(/&amp;/g, "&"))
+        .filter((url) => {
+          try {
+            return new URL(url).origin === this.origin && !/\.xml$/i.test(url);
+          } catch {
+            return false;
+          }
+        })
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
   }
   async getInteractiveElements() {
     this.ids.clear();
@@ -149,13 +196,20 @@ export class BrowserSession {
   async clickElement(id: string) {
     const loc = this.element(id);
     const info = await loc.evaluate((e) => ({
-      text: (e.textContent ?? "").toLowerCase(),
+      text: [
+        e.textContent,
+        e.getAttribute("aria-label"),
+        e.getAttribute("value"),
+        e.getAttribute("title"),
+      ]
+        .join(" ")
+        .toLowerCase(),
       type: e.getAttribute("type"),
       tag: e.tagName,
       form: !!e.closest("form"),
     }));
     if (
-      /delete|remove account|purchase|buy now|pay|checkout|unsubscribe/.test(
+      /\b(delete|remove account|close account|purchase|buy( now)?|pay( now)?|place order|checkout|unsubscribe|transfer|withdraw)\b/.test(
         info.text,
       )
     )
@@ -195,6 +249,7 @@ export class BrowserSession {
         .querySelector('link[rel="canonical"]')
         ?.getAttribute("href"),
       lang: document.documentElement.lang,
+      viewportMeta: !!document.querySelector('meta[name="viewport"]'),
       headings: Array.from(document.querySelectorAll("h1,h2,h3"))
         .slice(0, 40)
         .map((e) => ({
@@ -326,5 +381,19 @@ export class BrowserSession {
     this.closed = true;
     await this.browser?.close();
   }
+}
+function parseSetCookie(header: string) {
+  const [pair, ...attributes] = header.split(";").map((part) => part.trim());
+  const flags = attributes.map((attribute) => attribute.toLowerCase());
+  return {
+    name: pair.split("=")[0].slice(0, 100),
+    secure: flags.includes("secure"),
+    httpOnly: flags.includes("httponly"),
+    sameSite:
+      flags
+        .find((flag) => flag.startsWith("samesite="))
+        ?.slice(9)
+        .replace(/^./, (c) => c.toUpperCase()) ?? "Lax",
+  };
 }
 export type DOMSnapshot = Awaited<ReturnType<BrowserSession["getDOMSnapshot"]>>;
