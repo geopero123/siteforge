@@ -1,6 +1,7 @@
 import { supabasePublicKey } from "@/lib/supabase/config";
 import { pageSession } from "@/lib/supabase/server";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar, WorkspaceHeader } from "@/components/sidebar";
+import { Brand } from "@/components/brand";
 import Link from "next/link";
 export const dynamic = "force-dynamic";
 export default async function DashboardLayout({
@@ -10,11 +11,12 @@ export default async function DashboardLayout({
 }) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !supabasePublicKey())
     return (
-      <main className="panel login-card">
-        <h1>Connect your workspace</h1>
+      <main className="panel setup-card">
+        <Brand />
+        <h1 style={{ marginTop: 28 }}>Connect your workspace</h1>
         <p>
           Add the Supabase URL and public key to <code>.env.local</code>, apply
-          the included migration, then restart the app.
+          the included migrations, then restart the app.
         </p>
         <p>
           SiteForge uses real authentication and stored audits. Setup
@@ -31,13 +33,7 @@ export default async function DashboardLayout({
     <div className="shell">
       <Sidebar email={session.user.email ?? "Signed in"} />
       <div className="workspace">
-        <header className="workspace-header">
-          <span>Workspace / Website quality</span>
-          <span>
-            <span className="status-dot" />
-            Evidence-driven audits
-          </span>
-        </header>
+        <WorkspaceHeader />
         <main className="main">{children}</main>
       </div>
     </div>

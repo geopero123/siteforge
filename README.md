@@ -93,8 +93,11 @@ npm run typecheck
 npm run lint
 npm test
 npm run test:browser
+npm run test:ui
 npm run build
 ```
+
+`npm run test:ui` starts the app against an in-memory stand-in for Supabase Auth, the REST API and Storage, filled with fixture projects, audits and findings. It loads every page at desktop and mobile widths and fails on console errors or content pushed past the screen edge. It then runs the main flows: sign-in redirects, new audits from a URL or GitHub link, the pending-audit limit, filters and search, resolving and ignoring findings, copying patches, saving repositories, creating projects, billing state, the 404 page and sign-out. Set `UI_SCREENSHOTS=<folder>` to save screenshots. To browse the same fixture workspace yourself, run `npm run preview:ui` and open the printed sign-in link. Only one `next dev` can run per folder, so stop other dev servers first. The stand-in does not enforce database policies or triggers; those are covered by the database tests.
 
 The browser integration uses a deliberately broken local HTTP fixture and an injected AI test boundary. It checks real Chromium interaction, changing preview frames and cleanup, three evidence screenshots, axe findings, console/network evidence, SEO/layout issues, scoring, failed-page coverage, cancellation, and deadlines. It does not verify live Gemini responses or Supabase authentication.
 

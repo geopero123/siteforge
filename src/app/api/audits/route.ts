@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/supabase/server";
 import { auditInputSchema } from "@/lib/audit/schema";
 import { validateTarget } from "@/lib/security/url";
-import { apiError, assertSameOrigin } from "@/lib/api";
+import { apiError, assertSameOrigin, RequestError } from "@/lib/api";
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const { db, user } = await requireUser();
     const input = auditInputSchema.parse(await request.json());
     const url = input.mode === "repository" ? undefined : input.url;
-    if (url) await validateTarget(url);
+    if (url)
+      try {
+        await validateTarget(url);
+      } catch (e) {
+        throw new RequestError((e as Error).message);
+      }
     const { count, error: countError } = await db
       .from("audits")
       .select("id", { head: true, count: "exact" })

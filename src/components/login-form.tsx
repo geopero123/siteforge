@@ -1,29 +1,53 @@
 "use client";
 import { useState } from "react";
+import { Mail, MailCheck } from "lucide-react";
 import { browserDb } from "@/lib/supabase/client";
+import { GithubMark } from "./ui";
 export function LoginForm() {
   const [email, setEmail] = useState(""),
     [message, setMessage] = useState(""),
+    [sent, setSent] = useState(false),
     [busy, setBusy] = useState(false);
   return (
     <div className="stack">
       {message && (
-        <div role="status" className="alert">
-          {message}
+        <div role="status" className={"alert " + (sent ? "success" : "error")}>
+          {sent && <MailCheck size={16} />}
+          <div>{message}</div>
         </div>
       )}
+      <button
+        className="button large block"
+        onClick={async () => {
+          setSent(false);
+          try {
+            const { error } = await browserDb().auth.signInWithOAuth({
+              provider: "github",
+              options: { redirectTo: location.origin + "/auth/callback" },
+            });
+            if (error) throw error;
+          } catch (e) {
+            setMessage((e as Error).message);
+          }
+        }}
+      >
+        <GithubMark size={17} /> Continue with GitHub
+      </button>
+      <div className="divider">or use your email</div>
       <form
         className="form"
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
+          setSent(false);
           try {
             const { error } = await browserDb().auth.signInWithOtp({
               email,
               options: { emailRedirectTo: location.origin + "/auth/callback" },
             });
             if (error) throw error;
-            setMessage("Check your email for a secure sign-in link.");
+            setSent(true);
+            setMessage(`Check ${email} for a secure sign-in link.`);
           } catch (e) {
             setMessage((e as Error).message);
           } finally {
@@ -42,33 +66,14 @@ export function LoginForm() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <button
-          disabled={busy}
-          className="button primary"
-          style={{ width: "100%" }}
-        >
-          Send sign-in link →
+        <button disabled={busy} className="button primary large block">
+          <Mail size={16} />
+          {busy ? "Sending link…" : "Email me a sign-in link"}
         </button>
       </form>
-      <button
-        className="button"
-        onClick={async () => {
-          try {
-            const { error } = await browserDb().auth.signInWithOAuth({
-              provider: "github",
-              options: { redirectTo: location.origin + "/auth/callback" },
-            });
-            if (error) throw error;
-          } catch (e) {
-            setMessage((e as Error).message);
-          }
-        }}
-      >
-        Continue with GitHub
-      </button>
       <small>
-        GitHub sign-in requires the provider to be enabled in Supabase.
-        Repository access is configured separately.
+        GitHub sign-in doesn’t grant repository access. Repositories are
+        connected separately and read-only.
       </small>
     </div>
   );

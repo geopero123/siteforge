@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ArrowUpRight, FolderPlus, Globe } from "lucide-react";
 import { pageSession } from "@/lib/supabase/server";
 import { ProjectForm } from "@/components/project-form";
+import { GithubMark, relativeTime } from "@/components/ui";
 export default async function Projects() {
   const session = await pageSession();
   if (!session) return null;
@@ -14,32 +16,55 @@ export default async function Projects() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">YOUR WEBSITES</div>
           <h1>Projects</h1>
-          <p>A dedicated audit history for everything you ship.</p>
+          <p>One audit history for each website, repository, or both.</p>
         </div>
       </div>
-      <div className="grid-2">
+      <div className="split">
         <div className="stack">
           {data?.map((p) => (
             <Link
-              className="panel"
+              className="panel project-card"
               key={p.id}
               href={"/dashboard/projects/" + p.id}
             >
-              <h2>{p.name} ↗</h2>
-              <p className="mono" style={{ marginBottom: 0, fontSize: 12 }}>
-                {p.url ?? p.repository}
-              </p>
-              {p.url && p.repository && <small>{p.repository}</small>}
+              <header>
+                <div>
+                  <h2>{p.name}</h2>
+                  <small>Created {relativeTime(p.created_at)}</small>
+                </div>
+                <ArrowUpRight size={18} />
+              </header>
+              <div className="chips">
+                {p.url && (
+                  <span className="chip">
+                    <Globe size={13} />
+                    {p.url.replace(/^https?:\/\//, "")}
+                  </span>
+                )}
+                {p.repository && (
+                  <span className="chip">
+                    <GithubMark size={12} />
+                    {p.repository}
+                  </span>
+                )}
+              </div>
             </Link>
           ))}
           {!data?.length && (
-            <div className="empty">No projects yet. Create your first one.</div>
+            <div className="empty">
+              <FolderPlus size={28} />
+              <h2>No projects yet</h2>
+              <p>Create one for a website, a GitHub repository, or both.</p>
+            </div>
           )}
         </div>
         <section className="panel">
-          <h2>Create a project</h2>
+          <h2>New project</h2>
+          <p className="panel-sub">
+            Add a website, a repository, or both. You can attach a repository
+            later.
+          </p>
           <ProjectForm />
         </section>
       </div>

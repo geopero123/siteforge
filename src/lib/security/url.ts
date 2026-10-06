@@ -39,6 +39,10 @@ export async function validateTarget(raw: string, allowLocal = false) {
   if (!allowLocal) {
     const addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ""), {
       all: true,
+    }).catch(() => {
+      throw new Error(
+        `Couldn't find ${url.hostname}. Check the address for typos and that the site is online.`,
+      );
     });
     if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
       throw new Error("Destination resolves to a blocked network address.");

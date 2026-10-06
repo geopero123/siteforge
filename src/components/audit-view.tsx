@@ -4,7 +4,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, ChevronRight } from "lucide-react";
+import {
+  AlertTriangle,
+  Camera,
+  ChevronRight,
+  CircleAlert,
+  ClipboardList,
+  Code2,
+  FileText,
+  Globe,
+  History,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Target,
+} from "lucide-react";
 import {
   severities,
   score,
@@ -19,6 +34,19 @@ import {
 import { Activity } from "./audit-activity";
 import { IssueDetail } from "./issue-detail";
 import { LiveBrowser } from "./live-browser";
+import {
+  GithubMark,
+  ScoreRing,
+  StatusBadge,
+  categoryLabel,
+  displayTarget,
+  modeLabel,
+  relativeTime,
+  scoreTone,
+} from "./ui";
+
+const statusOrder = { open: 0, resolved: 1, ignored: 2 };
+
 export function AuditView({ id }: { id: string }) {
   const router = useRouter();
   const [data, setData] = useState<Snapshot | null>(null),
@@ -27,6 +55,7 @@ export function AuditView({ id }: { id: string }) {
     [severity, setSeverity] = useState(""),
     [category, setCategory] = useState(""),
     [page, setPage] = useState(""),
+    [status, setStatusFilter] = useState(""),
     [selected, setSelected] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   const polling = useRef(true);
@@ -58,7 +87,13 @@ export function AuditView({ id }: { id: string }) {
       if (e.key === "Escape") setSelected(null);
     };
     document.addEventListener("keydown", listener);
-    return () => document.removeEventListener("keydown", listener);
+    // Keep the page behind the drawer still while it is open.
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", listener);
+      document.body.style.overflow = overflow;
+    };
   }, [selected]);
   async function rerun() {
     if (!data) return;
@@ -82,17 +117,16 @@ export function AuditView({ id }: { id: string }) {
       router.push("/dashboard/audits/" + d.id);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
       setBusy(false);
     }
   }
-  async function setStatus(issue: StoredIssue, status: StoredIssue["status"]) {
+  async function setStatus(issue: StoredIssue, next: StoredIssue["status"]) {
     setBusy(true);
     try {
       const r = await fetch("/api/issues/" + issue.id, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: next }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -104,19 +138,24 @@ export function AuditView({ id }: { id: string }) {
     }
   }
   if (!data)
-    return (
-      <section className="panel">
-        {error ? (
-          <div className="alert error">
-            {error}
+    return error ? (
+      <div className="alert error" role="alert">
+        <CircleAlert size={16} />
+        <div>
+          <strong>Couldn’t load this audit.</strong> {error}
+          <p>
             <button className="button small" onClick={() => void refresh()}>
-              Retry
+              <RefreshCw size={13} /> Retry
             </button>
-          </div>
-        ) : (
-          <p>Loading saved audit evidence…</p>
-        )}
-      </section>
+          </p>
+        </div>
+      </div>
+    ) : (
+      <div className="stack" aria-busy="true" aria-label="Loading audit">
+        <div className="skeleton" style={{ height: 34, width: "40%" }} />
+        <div className="skeleton" style={{ height: 210 }} />
+        <div className="skeleton" style={{ height: 320 }} />
+      </div>
     );
   const { audit, issues, events, steps } = data;
   const liveFrame = data.screenshots.find((s) => s.viewport.name === "live");
@@ -134,6 +173,7 @@ export function AuditView({ id }: { id: string }) {
     issues.map((i) => ({ ...i.data, status: i.status })),
     scope,
   );
+  const open = issues.filter((i) => i.status === "open");
   const shownCategories = [
     ...new Set([...scope, ...issues.map((i) => i.data.category)]),
   ];
@@ -146,6 +186,7 @@ export function AuditView({ id }: { id: string }) {
       (i) =>
         (!severity || i.data.severity === severity) &&
         (!category || i.data.category === category) &&
+        (!status || i.status === status) &&
         (!page || findingLocation(i.data, audit.url) === page) &&
         (!search ||
           (i.data.title + " " + i.data.description)
@@ -154,55 +195,88 @@ export function AuditView({ id }: { id: string }) {
     )
     .sort(
       (a, b) =>
+        statusOrder[a.status] - statusOrder[b.status] ||
         severities.indexOf(a.data.severity) -
-        severities.indexOf(b.data.severity),
+          severities.indexOf(b.data.severity),
     );
+  const repoName = audit.repository?.split("#")[0];
   return (
     <>
-      <div className="page-head">
-        <div>
+      <div className="audit-head">
+        <div style={{ minWidth: 0 }}>
           <div className="eyebrow">
-            {audit.mode === "repository" ? "CODE" : audit.mode.toUpperCase()}{" "}
-            AUDIT / {audit.id.slice(0, 8)}
+            {modeLabel(audit.mode, !!audit.repository)} ·{" "}
+            {relativeTime(audit.created_at)}
           </div>
           <h1>
-            {audit.url
-              ? new URL(audit.url).hostname
-              : audit.repository?.split("#")[0]}
+            {displayTarget(audit)}
+            <StatusBadge status={audit.status} />
           </h1>
-          <p className="mono" style={{ fontSize: 12 }}>
-            {[audit.url, audit.repository].filter(Boolean).join(" · ")}
-          </p>
+          <div className="chips">
+            {audit.url && (
+              <a
+                className="chip"
+                href={audit.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Globe size={13} />
+                {audit.url.replace(/^https?:\/\//, "")}
+              </a>
+            )}
+            {repoName && (
+              <a
+                className="chip"
+                href={"https://github.com/" + repoName}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <GithubMark size={12} />
+                {audit.repository}
+              </a>
+            )}
+          </div>
         </div>
-        <div className="stack" style={{ gap: 10, justifyItems: "end" }}>
-          <span className={"badge " + audit.status}>{audit.status}</span>
+        <div className="page-actions">
+          <Link
+            className="button"
+            href={"/dashboard/projects/" + audit.project_id}
+          >
+            <History size={15} /> Project history
+          </Link>
           {!running && (
             <button
-              className="button"
+              className="button primary"
               disabled={busy}
               onClick={() => void rerun()}
             >
-              Run new scan ↗
+              <RefreshCw size={15} /> Run again
             </button>
           )}
         </div>
       </div>
       {error && (
         <div role="alert" className="alert error">
-          {error}
+          <CircleAlert size={16} />
+          <div>{error}</div>
         </div>
       )}
       {audit.error && (
         <div className="alert error">
-          <strong>Audit failed:</strong> {audit.error}
-          <p style={{ margin: "8px 0 0" }}>
-            Review worker logs and site availability, then run a new scan.
-          </p>
+          <CircleAlert size={16} />
+          <div>
+            <strong>This audit failed.</strong> {audit.error}
+            <p>
+              Failed audits don’t use a test credit. Check that the site or
+              repository is reachable, then run it again.
+            </p>
+          </div>
         </div>
       )}
       {audit.report?.warnings.map((w, i) => (
         <div key={i} className="alert">
-          Incomplete coverage: {w}
+          <AlertTriangle size={16} />
+          <div>{w}</div>
         </div>
       ))}
       {running ? (
@@ -227,16 +301,18 @@ export function AuditView({ id }: { id: string }) {
                 <LoaderCircle size={18} className="spinner" />
               </div>
               {audit.status === "queued" && (
-                <div className="alert">
-                  This audit is queued. Progress appears when a worker picks it
-                  up. If it stays queued, check your worker connection in
-                  Settings.
+                <div className="alert info">
+                  <History size={16} />
+                  <div>
+                    This audit is queued. Progress appears here as soon as a
+                    worker picks it up.
+                  </div>
                 </div>
               )}
               <Activity events={events} />
             </section>
             <section className="panel" style={{ alignSelf: "start" }}>
-              <h2>Agent activity</h2>
+              <h2>Checks</h2>
               {[
                 ...(website ? ["browser", "accessibility", "visual"] : []),
                 ...(audit.mode === "mission" ? ["mission"] : []),
@@ -246,16 +322,18 @@ export function AuditView({ id }: { id: string }) {
                 const last = events.filter((e) => e.agent === agent).at(-1);
                 return (
                   <div className="agent-row" key={agent}>
-                    <span>{agent} agent</span>
-                    <span className={"badge " + (last?.status ?? "")}>
-                      {last?.status ?? "waiting"}
-                    </span>
+                    <span>{agent}</span>
+                    {last ? (
+                      <StatusBadge status={last.status} />
+                    ) : (
+                      <span className="badge queued">Waiting</span>
+                    )}
                   </div>
                 );
               })}
-              <p style={{ marginTop: 24 }}>
-                Completed checks and collected evidence appear here as the audit
-                runs.
+              <p style={{ margin: "16px 0 0", fontSize: 13 }}>
+                Findings appear as soon as the audit finishes. You can leave
+                this page; the audit keeps running.
               </p>
             </section>
           </div>
@@ -265,244 +343,417 @@ export function AuditView({ id }: { id: string }) {
           {audit.report && (
             <>
               <section className="panel score-layout">
-                <div>
-                  <div className="stat-label">
-                    {audit.status === "partial"
-                      ? "Score from completed checks"
-                      : website
-                        ? "Current site score"
-                        : "Current code score"}
+                <ScoreRing score={currentScore.overall} />
+                <div className="score-side">
+                  <header>
+                    <h2>
+                      {audit.status === "partial"
+                        ? "Score from completed checks"
+                        : website
+                          ? "Site health"
+                          : "Code health"}
+                    </h2>
+                    <small>
+                      {audit.report.score.overall !== currentScore.overall
+                        ? `Was ${audit.report.score.overall} when the audit finished`
+                        : `${open.length} open of ${issues.length} findings`}
+                    </small>
+                  </header>
+                  <div className="severity-summary">
+                    {severities.map((s) => {
+                      const count = open.filter(
+                        (i) => i.data.severity === s,
+                      ).length;
+                      return (
+                        <button
+                          type="button"
+                          key={s}
+                          className={`severity-count ${count ? "" : "zero"}`}
+                          style={{ ["--tone" as string]: `var(--${s})` }}
+                          onClick={() => {
+                            setSeverity(severity === s ? "" : s);
+                            setStatusFilter("open");
+                            document
+                              .getElementById("issues")
+                              ?.scrollIntoView({ behavior: "smooth" });
+                          }}
+                          aria-label={`${count} open ${s} findings`}
+                        >
+                          <b>{count}</b> {s}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="big-score">
-                    {currentScore.overall}
-                    <small> / 100</small>
-                  </div>
-                  <small>Original audit: {audit.report.score.overall}</small>
-                </div>
-                <div>
-                  <div className="score-grid">
-                    {scope.map((c) => (
-                      <div key={c} className="score-item">
-                        <span>
-                          {c === "responsive" ? "Responsive design" : c}
-                          <strong className="mono">
-                            {currentScore.categories[c]}
-                          </strong>
-                        </span>
-                        <div className="bar">
-                          <i
-                            style={{ width: currentScore.categories[c] + "%" }}
-                          />
+                  <div
+                    className="score-grid"
+                    style={{
+                      ["--cols" as string]:
+                        scope.length <= 4
+                          ? scope.length
+                          : scope.length % 3
+                            ? 4
+                            : 3,
+                    }}
+                  >
+                    {scope.map((c) => {
+                      const value = currentScore.categories[c] ?? 100;
+                      return (
+                        <div
+                          key={c}
+                          className={`score-item ${scoreTone(value)}`}
+                        >
+                          <span>
+                            {categoryLabel(c)}
+                            <strong>{value}</strong>
+                          </span>
+                          <div className="bar">
+                            <i style={{ width: value + "%" }} />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                  <p style={{ fontSize: 11, marginTop: 22, marginBottom: 0 }}>
+                  <p className="score-note">
                     Severity × confidence deductions, averaged over{" "}
                     {scope.length} categories.{" "}
-                    <Link
-                      href="/dashboard/settings"
-                      style={{ textDecoration: "underline" }}
-                    >
-                      See scoring method
-                    </Link>
-                    . Review coverage before interpreting this score.
+                    <Link href="/dashboard/settings">How scoring works</Link>.
+                    Review coverage before reading too much into it.
                   </p>
                 </div>
               </section>
-              <p>{audit.report.summary}</p>
+              {audit.report.summary && (
+                <div className="summary-callout">
+                  <Sparkles size={18} />
+                  <p>{audit.report.summary}</p>
+                </div>
+              )}
               {audit.report.repository && (
-                <section className="panel" style={{ marginBottom: 24 }}>
-                  <h2>Repository</h2>
-                  <p className="mono" style={{ fontSize: 12 }}>
+                <section className="panel" style={{ marginBottom: 20 }}>
+                  <div className="panel-title">
+                    <h2>
+                      <Code2 size={16} /> Repository scan
+                    </h2>
                     <a
-                      href={`https://github.com/${audit.report.repository.name}`}
+                      className="chip mono"
+                      href={
+                        "https://github.com/" +
+                        audit.report.repository.name +
+                        (audit.report.repository.commit
+                          ? "/commit/" + audit.report.repository.commit
+                          : "")
+                      }
                       target="_blank"
                       rel="noreferrer"
                     >
-                      {audit.report.repository.name} ↗
-                    </a>{" "}
-                    · {audit.report.repository.branch}
-                    {audit.report.repository.commit &&
-                      " @ " + audit.report.repository.commit.slice(0, 7)}
-                  </p>
-                  <p style={{ marginBottom: 0 }}>
-                    {audit.report.repository.files} files indexed ·{" "}
-                    {audit.report.repository.analyzedFiles} checked by static
-                    rules · {audit.report.repository.reviewedFiles} AI-reviewed
-                    · {audit.report.repository.dependencies} dependency versions
-                    checked
-                  </p>
+                      <GithubMark size={12} />
+                      {audit.report.repository.branch}
+                      {audit.report.repository.commit &&
+                        " @ " + audit.report.repository.commit.slice(0, 7)}
+                    </a>
+                  </div>
+                  <div className="repo-stats">
+                    <div>
+                      <strong>{audit.report.repository.files}</strong>
+                      <span>files indexed</span>
+                    </div>
+                    <div>
+                      <strong>{audit.report.repository.analyzedFiles}</strong>
+                      <span>checked by static rules</span>
+                    </div>
+                    <div>
+                      <strong>{audit.report.repository.reviewedFiles}</strong>
+                      <span>reviewed by AI</span>
+                    </div>
+                    <div>
+                      <strong>{audit.report.repository.dependencies}</strong>
+                      <span>dependency versions</span>
+                    </div>
+                  </div>
                 </section>
               )}
               {audit.report.mission && (
-                <section className="panel" style={{ marginBottom: 24 }}>
-                  <h2>
-                    Mission:{" "}
-                    <span className="badge">
-                      {audit.report.mission.outcome}
-                    </span>
-                  </h2>
-                  <p>{audit.mission}</p>
+                <section className="panel" style={{ marginBottom: 20 }}>
+                  <div className="panel-title">
+                    <h2>
+                      <Target size={16} /> Mission
+                    </h2>
+                    <StatusBadge
+                      status={
+                        audit.report.mission.outcome === "SUCCESS"
+                          ? "complete"
+                          : audit.report.mission.outcome === "PARTIAL"
+                            ? "partial"
+                            : "failed"
+                      }
+                    />
+                  </div>
+                  <p style={{ color: "var(--text)" }}>“{audit.mission}”</p>
                   <p>{audit.report.mission.summary}</p>
-                  {audit.report.mission.evidence?.map((e, i) => (
-                    <div className="evidence" key={i}>
-                      Step {e.step}: {e.observation}
-                    </div>
-                  ))}
+                  <div className="mission-evidence">
+                    {audit.report.mission.evidence?.map((e, i) => (
+                      <div className="evidence" key={i}>
+                        <span className="evidence-type">Step {e.step}</span>
+                        <br />
+                        {e.observation}
+                      </div>
+                    ))}
+                  </div>
                 </section>
               )}
             </>
           )}
-          <section className="panel" style={{ padding: 0 }}>
-            <div style={{ padding: "22px 22px 0" }}>
-              <div className="panel-title">
-                <h2>
-                  Issue explorer <small> / {issues.length}</small>
-                </h2>
-                <span className="mono muted" style={{ fontSize: 11 }}>
-                  {issues.filter((i) => i.status === "open").length} OPEN
-                </span>
-              </div>
+          <section className="panel flush" id="issues">
+            <div className="panel-title" style={{ padding: "20px 20px 0" }}>
+              <h2>
+                <ClipboardList size={16} /> Findings{" "}
+                <small>
+                  {filtered.length === issues.length
+                    ? issues.length
+                    : `${filtered.length} of ${issues.length}`}
+                </small>
+              </h2>
+              {(search || severity || category || page || status) && (
+                <button
+                  className="button ghost small"
+                  onClick={() => {
+                    setSearch("");
+                    setSeverity("");
+                    setCategory("");
+                    setPage("");
+                    setStatusFilter("");
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            {issues.length > 0 && (
               <div className="filters">
-                <input
-                  aria-label="Search issues"
-                  placeholder="Search findings…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+                <div className="search-field">
+                  <Search size={15} />
+                  <input
+                    aria-label="Search findings"
+                    placeholder="Search findings…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
                 <select
-                  aria-label="Filter severity"
+                  aria-label="Filter by severity"
                   value={severity}
                   onChange={(e) => setSeverity(e.target.value)}
                 >
                   <option value="">All severities</option>
                   {severities.map((s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {s[0].toUpperCase() + s.slice(1)}
+                    </option>
                   ))}
                 </select>
                 <select
-                  aria-label="Filter category"
+                  aria-label="Filter by category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                 >
                   <option value="">All categories</option>
                   {shownCategories.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Filter location"
-                  value={page}
-                  onChange={(e) => setPage(e.target.value)}
-                >
-                  <option value="">All locations</option>
-                  {locations.map((location) => (
-                    <option value={location} key={location}>
-                      {location}
+                    <option key={c} value={c}>
+                      {categoryLabel(c)}
                     </option>
                   ))}
                 </select>
-              </div>
-            </div>
-            {filtered.map((i) => (
-              <button
-                className="issue-row"
-                key={i.id}
-                onClick={() => setSelected(i.id)}
-              >
-                <span className={"badge " + i.data.severity}>
-                  {i.data.severity}
-                </span>
-                <span className="issue-copy">
-                  <strong>{i.data.title}</strong>
-                  <small>
-                    {i.data.category} · {findingLocation(i.data, audit.url)}
-                    {i.data.viewport
-                      ? ` · ${i.data.viewport.width}px`
-                      : ""} · {Math.round(i.data.confidence * 100)}% confidence
-                  </small>
-                </span>
-                <span className={"badge " + i.status}>{i.status}</span>
-                <ChevronRight size={16} />
-              </button>
-            ))}
-            {!filtered.length && (
-              <div className="empty">
-                {issues.length
-                  ? "No issues match these filters."
-                  : "No findings were recorded. Review coverage and warnings."}
+                <select
+                  aria-label="Filter by status"
+                  value={status}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="ignored">Ignored</option>
+                </select>
+                {locations.length > 1 && (
+                  <select
+                    aria-label="Filter by location"
+                    value={page}
+                    onChange={(e) => setPage(e.target.value)}
+                    style={{ gridColumn: "1 / -1" }}
+                  >
+                    <option value="">All pages and files</option>
+                    {locations.map((location) => (
+                      <option value={location} key={location}>
+                        {location}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
+            <div className="issue-list">
+              {filtered.map((i) => {
+                const source = i.data.url.startsWith("https://github.com/");
+                return (
+                  <button
+                    className={`issue-row ${i.data.severity} ${i.status === "open" ? "" : "is-closed"}`}
+                    key={i.id}
+                    onClick={() => setSelected(i.id)}
+                  >
+                    <span className={"badge " + i.data.severity}>
+                      {i.data.severity}
+                    </span>
+                    <span className="issue-copy">
+                      <strong>{i.data.title}</strong>
+                      <span className="issue-meta">
+                        <span>{categoryLabel(i.data.category)}</span>
+                        <span>
+                          {source ? (
+                            <FileText size={12} />
+                          ) : (
+                            <Globe size={12} />
+                          )}
+                          <span className="mono">
+                            {findingLocation(i.data, audit.url)}
+                          </span>
+                        </span>
+                        {i.data.viewport && (
+                          <span>{i.data.viewport.width}px</span>
+                        )}
+                        {i.data.confidence < 1 && (
+                          <span>
+                            {Math.round(i.data.confidence * 100)}% confidence
+                          </span>
+                        )}
+                        {i.data.patch && <span>Patch available</span>}
+                      </span>
+                    </span>
+                    <span className="issue-status">
+                      {i.status !== "open" && <StatusBadge status={i.status} />}
+                    </span>
+                    <ChevronRight size={16} />
+                  </button>
+                );
+              })}
+              {!filtered.length && (
+                <div className="empty">
+                  {issues.length ? (
+                    <p>No findings match these filters.</p>
+                  ) : audit.report ? (
+                    <>
+                      <Sparkles size={26} />
+                      <h2>No problems found</h2>
+                      <p>
+                        Every check that ran came back clean. Review coverage
+                        below to see what was checked.
+                      </p>
+                    </>
+                  ) : (
+                    <p>No findings were recorded for this audit.</p>
+                  )}
+                </div>
+              )}
+            </div>
           </section>
           {screenshots.length > 0 && (
-            <section style={{ marginTop: 30 }}>
-              <h2>Captured viewports</h2>
-              <div className="grid-3">
+            <>
+              <div className="section-title">
+                <h2>
+                  <Camera
+                    size={16}
+                    style={{ display: "inline", marginRight: 8 }}
+                  />
+                  Captured viewports
+                </h2>
+              </div>
+              <div className="shot-grid">
                 {screenshots.map((s) => (
                   <a
-                    className="shot"
                     key={s.id}
                     href={s.signedUrl}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <img
-                      src={s.signedUrl}
-                      alt={`Captured ${s.viewport.name} state of ${s.url}`}
-                      loading="lazy"
-                    />
-                    <p className="mono">
-                      {s.viewport.width} × {s.viewport.height} ·{" "}
-                      {new URL(s.url).pathname}
-                    </p>
+                    <figure className="shot" style={{ margin: 0 }}>
+                      <div className="shot-frame">
+                        <img
+                          src={s.signedUrl}
+                          alt={`Captured ${s.viewport.name} view of ${s.url}`}
+                          loading="lazy"
+                        />
+                      </div>
+                      <figcaption>
+                        <span className="mono">{new URL(s.url).pathname}</span>
+                        <span>
+                          {s.viewport.name} · {s.viewport.width} ×{" "}
+                          {s.viewport.height}
+                        </span>
+                      </figcaption>
+                    </figure>
                   </a>
                 ))}
               </div>
-            </section>
+            </>
           )}
-          <details>
-            <summary>Coverage & technical checks</summary>
-            <div className="panel">
-              <ul>
-                {audit.report?.coverage.map((c, i) => (
-                  <li key={i} className="mono" style={{ fontSize: 11 }}>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-              {Object.entries(audit.report?.checks ?? {}).map(([k, v]) => (
-                <p key={k}>
-                  <strong>{k}:</strong> {v}
-                </p>
-              ))}
-            </div>
-          </details>
-          {steps.length > 0 && (
-            <details open>
-              <summary>Mission tool execution / {steps.length} steps</summary>
-              {steps.map((s) => (
-                <div
-                  className="evidence"
-                  key={s.id}
-                  style={{ marginBottom: 8 }}
-                >
-                  <strong>{s.tool}</strong>
-                  <pre>
-                    {JSON.stringify(
-                      { arguments: s.args, result: s.result },
-                      null,
-                      2,
-                    )}
-                  </pre>
+          <div style={{ marginTop: 24 }}>
+            {audit.report && (
+              <details className="disclosure">
+                <summary>
+                  <FileText size={15} /> Coverage and checks
+                </summary>
+                <div>
+                  <ul>
+                    {audit.report.coverage.map((c, i) => (
+                      <li key={i} className="mono">
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="kv" style={{ marginTop: 16 }}>
+                    {Object.entries(audit.report.checks ?? {}).map(([k, v]) => (
+                      <div key={k}>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {k.replace(/([A-Z])/g, " $1").toLowerCase()}
+                        </span>
+                        <span className="muted" style={{ textAlign: "right" }}>
+                          {v}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              </details>
+            )}
+            {steps.length > 0 && (
+              <details className="disclosure" open>
+                <summary>
+                  <Target size={15} /> Mission steps / {steps.length}
+                </summary>
+                <div>
+                  {steps.map((s, index) => (
+                    <div className="evidence" key={s.id}>
+                      <span className="evidence-type">
+                        {index + 1}. {s.tool}
+                      </span>
+                      <pre>
+                        {JSON.stringify(
+                          { arguments: s.args, result: s.result },
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+            <details className="disclosure">
+              <summary>
+                <History size={15} /> Activity log / {events.length}
+              </summary>
+              <div>
+                <Activity events={events} />
+              </div>
             </details>
-          )}
-          <details>
-            <summary>Chronological activity log</summary>
-            <Activity events={events} />
-          </details>
+          </div>
         </>
       )}
       {issue && (

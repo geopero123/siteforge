@@ -43,4 +43,8 @@ SiteForge has two running processes: the Next.js web app and an audit worker. Th
 
 Visual findings remain hypotheses, with confidence capped at 0.85. Mission evidence must quote a successful recorded tool result. AI code-review findings must quote the file they cite, and their confidence is capped at 0.8. Repository scans suggest patches but never apply them. Scores merge duplicate findings first and count only open issues.
 
+## Previewing the interface
+
+`scripts/preview/` holds an in-memory stand-in for the Supabase endpoints the web app calls (`fake-supabase.ts`), fixture data (`fixtures.ts`) and a fictional storefront rendered in Chromium for screenshots (`storefront.ts`). `npm run preview:ui` runs the app against it, and `npm run test:ui` uses it for page and flow tests. Shared UI pieces such as the score ring, status badges and labels live in `src/components/ui.tsx`; colors, spacing and severity tones are CSS variables at the top of `src/app/globals.css`.
+
 For local setup and verification commands, see the [README](../README.md). For deployment details, see [HOSTING.md](HOSTING.md).

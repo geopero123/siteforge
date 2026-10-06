@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/supabase/server";
-import { apiError, assertSameOrigin } from "@/lib/api";
+import { apiError, assertSameOrigin, RequestError } from "@/lib/api";
 import { parseTarget } from "@/lib/security/url";
 import { repositoryReferenceSchema as repositorySchema } from "@/lib/repository/reference";
 export async function POST(request: Request) {
@@ -18,7 +18,12 @@ export async function POST(request: Request) {
         message: "Provide a website URL, a GitHub repository, or both",
       })
       .parse(await request.json());
-    if (input.url) parseTarget(input.url);
+    if (input.url)
+      try {
+        parseTarget(input.url);
+      } catch (e) {
+        throw new RequestError((e as Error).message);
+      }
     const { data, error } = await db
       .from("projects")
       .insert({ ...input, user_id: user.id })

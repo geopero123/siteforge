@@ -170,3 +170,22 @@ it("rejects a fourth pending audit before insertion", async () => {
   ).toBe(429);
   expect(from).toHaveBeenCalledTimes(1);
 });
+it("reports an unreachable website as a 400 with a readable message", async () => {
+  vi.mocked(requireUser).mockResolvedValue({
+    db: {},
+    user: { id: "owner" },
+  } as never);
+  const { validateTarget } = await import("@/lib/security/url");
+  vi.mocked(validateTarget).mockRejectedValue(
+    new Error("Couldn't find no-such-site.example. Check the address."),
+  );
+  const response = await auditPost(
+    request({
+      projectId: crypto.randomUUID(),
+      url: "https://no-such-site.example",
+      mode: "quick",
+    }),
+  );
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toContain("Couldn't find");
+});

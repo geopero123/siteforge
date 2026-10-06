@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronRight, Globe, History, Plus, ScanLine } from "lucide-react";
 import { pageSession } from "@/lib/supabase/server";
 import { RepositoryForm } from "@/components/repository-form";
+import {
+  GithubMark,
+  StatusBadge,
+  modeLabel,
+  relativeTime,
+  scoreTone,
+} from "@/components/ui";
 export default async function Project({
   params,
 }: {
@@ -27,11 +35,26 @@ export default async function Project({
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">PROJECT</div>
           <h1>{p.name}</h1>
-          <p className="mono">
-            {[p.url, p.repository].filter(Boolean).join(" · ")}
-          </p>
+          <div className="chips">
+            {p.url && (
+              <a className="chip" href={p.url} target="_blank" rel="noreferrer">
+                <Globe size={13} />
+                {p.url.replace(/^https?:\/\//, "")}
+              </a>
+            )}
+            {p.repository && (
+              <a
+                className="chip"
+                href={"https://github.com/" + p.repository.split("#")[0]}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <GithubMark size={12} />
+                {p.repository}
+              </a>
+            )}
+          </div>
         </div>
         <Link
           className="button primary"
@@ -43,33 +66,53 @@ export default async function Project({
             })
           }
         >
-          New audit →
+          <Plus size={16} /> New audit
         </Link>
       </div>
-      <div className="grid-2">
-        <section className="panel">
-          <h2>Audit history</h2>
+      <div className="split">
+        <section className="panel flush">
+          <div className="panel-title" style={{ padding: "20px 20px 0" }}>
+            <h2>
+              <History size={16} /> Audit history
+            </h2>
+            <small>{audits?.length ?? 0} audits</small>
+          </div>
           {audits?.map((a) => (
             <Link
-              className="issue-row"
+              className="list-row"
               key={a.id}
               href={"/dashboard/audits/" + a.id}
             >
-              <span className={"badge " + a.status}>{a.status}</span>
-              <span className="issue-copy">
-                <strong>
-                  {a.mode === "repository" ? "code" : a.mode} audit
-                  {a.mode !== "repository" && a.repository ? " + code" : ""}
-                </strong>
-                <small>{new Date(a.created_at).toLocaleString()}</small>
+              <StatusBadge status={a.status} />
+              <span className="grow">
+                <strong>{modeLabel(a.mode, !!a.repository)}</strong>
+                <small>{relativeTime(a.created_at)}</small>
               </span>
-              <span className="mono">{a.report?.score?.overall ?? "—"}</span>
+              {typeof a.report?.score?.overall === "number" && (
+                <span
+                  className={"score-pill " + scoreTone(a.report.score.overall)}
+                >
+                  {a.report.score.overall}
+                </span>
+              )}
+              <ChevronRight size={16} />
             </Link>
           ))}
-          {!audits?.length && <p>This project has no audits yet.</p>}
+          {!audits?.length && (
+            <div className="empty">
+              <ScanLine size={26} />
+              <p>This project has no audits yet.</p>
+            </div>
+          )}
         </section>
         <section className="panel">
-          <h2>GitHub repository</h2>
+          <h2>
+            <GithubMark size={15} /> GitHub repository
+          </h2>
+          <p className="panel-sub" style={{ marginTop: 0 }}>
+            Attach a repository to scan its code on every audit and link website
+            problems to the files that cause them.
+          </p>
           <RepositoryForm id={id} initial={p.repository} />
         </section>
       </div>

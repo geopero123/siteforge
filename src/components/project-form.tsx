@@ -36,23 +36,31 @@ export function ProjectForm() {
     >
       {error && <div className="alert error">{error}</div>}
       <label>
-        Name
-        <input name="name" required maxLength={100} />
+        Project name
+        <input
+          name="name"
+          required
+          maxLength={100}
+          placeholder="Marketing website"
+        />
       </label>
       <label>
-        Website URL <small>optional if you add a repository</small>
+        <span>
+          Website URL <small>· optional with a repository</small>
+        </span>
         <input type="url" name="url" placeholder="https://example.com" />
       </label>
       <label>
-        GitHub repository{" "}
-        <small>optional · owner/repo or github.com link</small>
+        <span>
+          GitHub repository <small>· optional</small>
+        </span>
         <input
           name="repository"
-          placeholder="https://github.com/your-team/website"
+          placeholder="owner/repo or https://github.com/owner/repo"
         />
       </label>
       <button disabled={busy} className="button primary">
-        Create project →
+        {busy ? "Creating…" : "Create project"}
       </button>
     </form>
   );

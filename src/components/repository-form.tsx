@@ -11,6 +11,7 @@ export function RepositoryForm({
 }) {
   const [repo, setRepo] = useState(initial ?? ""),
     [message, setMessage] = useState(""),
+    [failed, setFailed] = useState(false),
     [busy, setBusy] = useState(false);
   return (
     <form
@@ -18,6 +19,7 @@ export function RepositoryForm({
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
+        setFailed(false);
         try {
           const normalized = repo.trim()
             ? formatRepository(parseRepository(repo))
@@ -39,6 +41,7 @@ export function RepositoryForm({
               : "Repository removed.",
           );
         } catch (e) {
+          setFailed(true);
           setMessage((e as Error).message);
         } finally {
           setBusy(false);
@@ -46,24 +49,27 @@ export function RepositoryForm({
       }}
     >
       <label>
-        Read-only GitHub repository
+        Repository
         <input
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
           placeholder="owner/repo or https://github.com/owner/repo"
         />
       </label>
-      <small>
+      <small className="field-help">
         Public repositories work without a token. Private repositories require a
         worker connection authorized for your account. Add #branch to scan a
         branch other than the default. Suggested diffs are never applied
         automatically.
       </small>
       <button className="button" disabled={busy}>
-        Save repository
+        {busy ? "Saving…" : "Save repository"}
       </button>
       {message && (
-        <div role="status" className="alert">
+        <div
+          role="status"
+          className={"alert " + (failed ? "error" : "success")}
+        >
           {message}
         </div>
       )}

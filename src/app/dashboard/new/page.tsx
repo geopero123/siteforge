@@ -1,5 +1,30 @@
+import { FileDiff, KeyRound, MonitorSmartphone, Sparkles } from "lucide-react";
 import { pageSession } from "@/lib/supabase/server";
 import { AuditForm } from "@/components/audit-form";
+
+const stages = [
+  {
+    icon: MonitorSmartphone,
+    title: "Browser checks",
+    text: "Chromium opens your site at three viewport sizes. axe, security headers, network and DOM checks collect objective evidence.",
+  },
+  {
+    icon: KeyRound,
+    title: "Repository scan",
+    text: "The repository is downloaded read-only and checked for leaked secrets, vulnerable dependencies, risky code, CI and container problems.",
+  },
+  {
+    icon: Sparkles,
+    title: "Verified AI review",
+    text: "Gemini reviews screenshots and source. Any claim that can’t quote real code or evidence is discarded.",
+  },
+  {
+    icon: FileDiff,
+    title: "Fixes you can apply",
+    text: "Every finding links to its page or file and line, with a suggested fix and, where possible, a downloadable patch.",
+  },
+];
+
 export default async function NewAudit({
   searchParams,
 }: {
@@ -18,15 +43,14 @@ export default async function NewAudit({
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">WEBSITE + CODE → EVIDENCE → FIXES</div>
-          <h1>Put your website and code to the test.</h1>
+          <h1>New audit</h1>
           <p>
             Give SiteForge a URL, a GitHub repository, or both. Get every
             problem with a fix.
           </p>
         </div>
       </div>
-      <div className="grid-2">
+      <div className="split">
         <section className="panel">
           <AuditForm
             projects={data ?? []}
@@ -34,31 +58,25 @@ export default async function NewAudit({
             initialRepository={repository}
           />
         </section>
-        <aside className="panel" style={{ alignSelf: "start" }}>
+        <aside className="panel">
           <h2>What happens next</h2>
-          <div className="stack">
-            <p>
-              01 &nbsp; A worker opens your site in Chromium and captures each
-              viewport. axe, security headers, network and DOM checks collect
-              objective evidence.
-            </p>
-            <p>
-              02 &nbsp; The repository is downloaded read-only and checked for
-              leaked secrets, vulnerable dependencies (OSV.dev), risky code
-              patterns, CI and container problems.
-            </p>
-            <p>
-              03 &nbsp; Gemini reviews screenshots and source files. Every AI
-              claim must quote real code or evidence, or it is discarded.
-            </p>
-            <p>
-              04 &nbsp; Each finding links to its page or file and line, with a
-              suggested fix and, where possible, a patch you can download.
-            </p>
+          <div className="activity" style={{ marginTop: 18 }}>
+            {stages.map(({ icon: Icon, title, text }) => (
+              <div className="activity-entry" key={title}>
+                <span className="activity-icon">
+                  <Icon size={12} />
+                </span>
+                <div>
+                  <strong style={{ textTransform: "none", fontSize: 13 }}>
+                    {title}
+                  </strong>
+                  <p>{text}</p>
+                </div>
+              </div>
+            ))}
           </div>
           <small>
-            Run <code>npm run worker</code> alongside the web app. Reports
-            clearly label checks that failed or were unavailable.
+            Reports clearly label any check that failed or was unavailable.
           </small>
         </aside>
       </div>

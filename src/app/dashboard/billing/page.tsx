@@ -1,3 +1,4 @@
+import { CalendarClock, CircleCheck, Coins, Info, Ticket } from "lucide-react";
 import { pageSession } from "@/lib/supabase/server";
 import { billingStatus } from "@/lib/billing/status";
 import { BillingActions } from "@/components/billing-actions";
@@ -23,24 +24,33 @@ export default async function Billing({
           <p>Know what’s left. Choose what’s next.</p>
         </div>
         <Link className="button" href="/dashboard/new">
-          New test →
+          New audit
         </Link>
       </div>
       {params.checkout === "success" && (
-        <div className="alert" role="status">
-          You’re back from checkout. Your balance updates after payment is
-          confirmed. If it hasn’t arrived yet, refresh the balance in a few
-          seconds.
+        <div className="alert success" role="status">
+          <CircleCheck size={16} />
+          <div>
+            You’re back from checkout. Your balance updates once payment is
+            confirmed. If it hasn’t arrived yet, refresh the balance in a few
+            seconds.
+          </div>
         </div>
       )}
       {params.checkout === "canceled" && (
-        <div className="alert" role="status">
-          Checkout was canceled. You can choose a plan whenever you’re ready.
+        <div className="alert info" role="status">
+          <Info size={16} />
+          <div>
+            Checkout was canceled. You can choose a plan whenever you’re ready.
+          </div>
         </div>
       )}
       <div className="grid-3">
-        <section className="panel">
-          <div className="stat-label">Available tests</div>
+        <section className="panel stat-card">
+          <header>
+            <span className="stat-label">Available tests</span>
+            <Coins size={16} />
+          </header>
           <div className="stat">{status.single + status.monthly}</div>
           <small>
             {status.enabled
@@ -48,17 +58,33 @@ export default async function Billing({
               : "Paid access is not enabled yet"}
           </small>
         </section>
-        <section className="panel">
-          <div className="stat-label">Monthly tests remaining</div>
-          <div className="stat">{status.monthly}</div>
+        <section className="panel stat-card">
+          <header>
+            <span className="stat-label">Monthly tests remaining</span>
+            <CalendarClock size={16} />
+          </header>
+          <div className="stat">
+            {status.monthly}
+            <small className="muted"> / 20</small>
+          </div>
+          <div className="bar tone-good" style={{ margin: "4px 0 2px" }}>
+            <i
+              style={{
+                width: Math.min(100, (status.monthly / 20) * 100) + "%",
+              }}
+            />
+          </div>
           <small>
             {status.periodEnd
-              ? `Credits expire ${new Date(status.periodEnd).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" })} (UTC)`
+              ? `Expire ${new Date(status.periodEnd).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" })} (UTC)`
               : "20 tests per paid billing month"}
           </small>
         </section>
-        <section className="panel">
-          <div className="stat-label">Purchased tests remaining</div>
+        <section className="panel stat-card">
+          <header>
+            <span className="stat-label">Purchased tests remaining</span>
+            <Ticket size={16} />
+          </header>
           <div className="stat">{status.single}</div>
           <small>No expiry · used after monthly credits</small>
         </section>
