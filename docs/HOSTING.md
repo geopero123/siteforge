@@ -22,7 +22,22 @@ In Supabase Auth URL Configuration, set the Site URL to `https://siteforge.madeb
 
 ## Audit worker
 
-The included `Dockerfile.worker` runs the persistent queue consumer with Chromium. Provision its required Supabase URL, service-role key, Gemini key and model settings through the worker host's secret environment configuration. Follow README's production network isolation and Chromium sandbox requirements before enabling public audits. Set `NODE_ENV=production`, leave `ALLOW_LOCAL_AUDITS` disabled, and set `AUDIT_EGRESS_ISOLATED=true` only after implementing and verifying actual egress restrictions. Repository scans also need outbound HTTPS to `api.github.com`, `codeload.github.com` and `api.osv.dev`. Apply `supabase/migrations/20261006090000_repository_audits.sql` before deploying this version: the web app writes the new `audits.repository` column and `repository` mode.
+The included `Dockerfile.worker` runs the persistent queue consumer with Chromium. Provision its required Supabase URL, service-role key, Gemini key and model settings through the worker host's secret environment configuration. Follow README's production network isolation and Chromium sandbox requirements before enabling public audits. Set `NODE_ENV=production`, leave `ALLOW_LOCAL_AUDITS` disabled, and set `AUDIT_EGRESS_ISOLATED=true` only after implementing and verifying actual egress restrictions. Repository scans also need outbound HTTPS to `api.github.com`, `codeload.github.com` and `api.osv.dev`. Before deploying commit 094c173 or later, follow [Upgrading to repository scans](#upgrading-to-repository-scans).
+
+## Upgrading to repository scans
+
+Commits from 094c173 onward need `supabase/migrations/20261006090000_repository_audits.sql`. Until it is applied, the new web app cannot create audits or code-only projects. The migration is forward-only.
+
+1. **Workers first.** If any worker processes the production queue, wait until `select id from public.audits where status = 'running';` returns no rows, stop it, and start one built from current `main`. The new worker works with both the old and new schema. An older worker fails every code-only audit with "Invalid URL".
+2. **Apply the migration.** Check the history in the Supabase SQL editor: `select version from supabase_migrations.schema_migrations order by version;`
+   - If it lists 20261004084108 and 20261004162058, link the CLI (`npx supabase link --project-ref <ref>`), confirm that `npx supabase db push --dry-run` lists only `20261006090000_repository_audits.sql`, then run `npx supabase db push`.
+   - Otherwise, paste the whole file into the SQL editor and run it once. The initial migration went through the Supabase connector, and nothing records how the billing migration was applied, so the CLI may try to rerun them. If you switch to the CLI later, record this one with `npx supabase migration repair --status applied 20261006090000`.
+   - If it stops on a lock timeout or deadlock, nothing changed; run it again.
+3. **Reload the API schema:** `notify pgrst, 'reload schema';`
+4. **Verify.** `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'audits' and column_name = 'repository';` returns one row. Then start one website audit and one code-only audit.
+5. **Deploy the web app** from `main` with `vercel --prod`. Production was deployed with the Vercel CLI, so pushing to GitHub does not update it unless Git integration has been connected since.
+
+Don't roll the web app back to a build older than 094c173 once code-only audits exist: their pages need the newer code, and the schema change cannot be undone without deleting those audits.
 
 ## Verification
 

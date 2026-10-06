@@ -60,3 +60,54 @@ it("requires the target that matches the audit mode", async () => {
     ),
   ).rejects.toThrow("audits_mode_check");
 });
+
+it("applies on top of existing data and clears unusable repository values", async () => {
+  const live = new PGlite();
+  const site = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const other = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  for (const file of [
+    "scripts/database-bootstrap.sql",
+    "supabase/migrations/20261004084108_initial_siteforge.sql",
+    "supabase/migrations/20261004162058_test_billing.sql",
+  ])
+    await live.exec(await readFile(file, "utf8"));
+  await live.query("insert into auth.users(id) values($1)", [owner]);
+  // Before this migration nothing limited repository length.
+  await live.query(
+    "insert into public.projects(id,user_id,name,url,repository) values($1,$3,'Site','https://example.com',$4),($2,$3,'Other','https://other.example','acme/site')",
+    [site, other, owner, "x".repeat(450)],
+  );
+  await live.query(
+    "insert into public.audits(project_id,user_id,url,mode,status) values($1,$2,'https://example.com','quick','complete'),($1,$2,'https://example.com','mission','failed')",
+    [site, owner],
+  );
+  await live.exec(
+    await readFile(
+      "supabase/migrations/20261006090000_repository_audits.sql",
+      "utf8",
+    ),
+  );
+  expect(
+    (
+      await live.query<{ id: string; repository: string | null }>(
+        "select id, repository from public.projects order by name",
+      )
+    ).rows,
+  ).toEqual([
+    { id: other, repository: "acme/site" },
+    { id: site, repository: null },
+  ]);
+  expect(
+    (
+      await live.query<{ n: number }>(
+        "select count(*)::int as n from public.audits",
+      )
+    ).rows[0].n,
+  ).toBe(2);
+  // The previous app version never sends repository; its inserts keep working.
+  await live.query(
+    "insert into public.audits(project_id,user_id,url,mode) values($1,$2,'https://example.com','quick')",
+    [other, owner],
+  );
+  await live.close();
+}, 30000);
