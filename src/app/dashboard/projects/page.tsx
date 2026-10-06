@@ -22,10 +22,11 @@ export default async function Projects() {
       </div>
       <div className="split">
         <div className="stack">
-          {data?.map((p) => (
+          {data?.map((p, index) => (
             <Link
               className="panel project-card"
               key={p.id}
+              style={{ ["--i" as string]: Math.min(index, 12) }}
               href={"/dashboard/projects/" + p.id}
             >
               <header>

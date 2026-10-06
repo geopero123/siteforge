@@ -1,4 +1,18 @@
-import type { SVGProps } from "react";
+import type { CSSProperties, SVGProps } from "react";
+
+// Counts up to `value` on first render; screen readers read the final value.
+export function CountUp({ value, from = 0 }: { value: number; from?: number }) {
+  return (
+    <>
+      <span
+        className="count"
+        aria-hidden
+        style={{ "--to": value, "--from": from } as CSSProperties}
+      />
+      <span className="sr-only">{value}</span>
+    </>
+  );
+}
 
 export function BrandMark(props: SVGProps<SVGSVGElement>) {
   return (
@@ -80,11 +94,14 @@ export function ScoreRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - value / 100)}
+          style={{ "--full": `${circumference}px` } as CSSProperties}
         />
       </svg>
       <div className="score-ring-label" aria-hidden>
-        <strong>{value}</strong>
-        <span>{label}</span>
+        <strong>
+          <span className="count" style={{ "--to": value } as CSSProperties} />
+        </strong>
+        <span className="score-ring-caption">{label}</span>
       </div>
     </div>
   );

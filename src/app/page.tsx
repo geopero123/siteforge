@@ -15,6 +15,8 @@ import { Brand } from "@/components/brand";
 import { UrlEntry } from "@/components/url-entry";
 import { Pricing } from "@/components/pricing";
 import { ProductPreview } from "@/components/product-preview";
+import { Spotlight } from "@/components/spotlight";
+import { CountUp } from "@/components/ui";
 
 const features = [
   {
@@ -112,27 +114,38 @@ export default function Landing() {
           <ProductPreview />
         </section>
 
-        <section className="proof-strip" aria-label="What every audit covers">
+        <section
+          className="proof-strip reveal"
+          aria-label="What every audit covers"
+        >
           <div>
-            <strong>3 viewports</strong>
+            <strong>
+              <CountUp value={3} /> viewports
+            </strong>
             <span>Desktop, tablet and mobile captures</span>
           </div>
           <div>
-            <strong>9 categories</strong>
+            <strong>
+              <CountUp value={9} /> categories
+            </strong>
             <span>From accessibility to dependencies</span>
           </div>
           <div>
-            <strong>11 ecosystems</strong>
+            <strong>
+              <CountUp value={11} /> ecosystems
+            </strong>
             <span>Lockfiles checked against OSV.dev</span>
           </div>
           <div>
-            <strong>0 guesses</strong>
+            <strong>
+              <CountUp value={0} from={99} /> guesses
+            </strong>
             <span>AI claims must quote real evidence</span>
           </div>
         </section>
 
         <section id="how-it-works" className="section">
-          <div className="section-head">
+          <div className="section-head reveal">
             <div className="eyebrow">How it works</div>
             <h2>Point it at a site or a repo. Get a report you can act on.</h2>
             <p>
@@ -141,21 +154,21 @@ export default function Landing() {
             </p>
           </div>
           <div className="steps">
-            <article className="step">
+            <article className="step reveal">
               <h3>Give it a URL, a repository, or both</h3>
               <p>
                 Paste your website address or a GitHub link. Attach both to
                 trace a broken page back to the file that causes it.
               </p>
             </article>
-            <article className="step">
+            <article className="step reveal">
               <h3>It tests and reads everything</h3>
               <p>
                 A real browser explores your pages while the repository is
                 scanned for secrets, risky code and vulnerable packages.
               </p>
             </article>
-            <article className="step">
+            <article className="step reveal">
               <h3>Fix with evidence, not opinions</h3>
               <p>
                 Each finding links to its page or file and line, with
@@ -166,7 +179,7 @@ export default function Landing() {
         </section>
 
         <section id="features" className="section">
-          <div className="section-head">
+          <div className="section-head reveal">
             <div className="eyebrow">Features</div>
             <h2>
               One audit covers the site your users see and the code behind it.
@@ -176,7 +189,7 @@ export default function Landing() {
               and anything it can’t back with evidence is thrown away.
             </p>
           </div>
-          <div className="feature-grid">
+          <Spotlight className="feature-grid reveal">
             {features.map(({ icon: Icon, title, text, tag }) => (
               <article className="feature" key={title}>
                 <div className="feature-icon">
@@ -189,11 +202,14 @@ export default function Landing() {
                 <p>{text}</p>
               </article>
             ))}
-          </div>
+          </Spotlight>
         </section>
 
         <section className="section">
-          <div className="grid-2" style={{ alignItems: "center", gap: 48 }}>
+          <div
+            className="grid-2 reveal"
+            style={{ alignItems: "center", gap: 48 }}
+          >
             <div className="section-head" style={{ margin: 0 }}>
               <div className="eyebrow">From symptom to source</div>
               <h2>Patches you can trust, because they’re checked.</h2>
@@ -234,7 +250,7 @@ export default function Landing() {
 
         <Pricing />
 
-        <section className="cta-band">
+        <section className="cta-band reveal">
           <div>
             <h2>Ship your next release with fewer surprises.</h2>
             <p>

@@ -3,6 +3,7 @@ import { pageSession } from "@/lib/supabase/server";
 import { billingStatus } from "@/lib/billing/status";
 import { BillingActions } from "@/components/billing-actions";
 import { Pricing } from "@/components/pricing";
+import { CountUp } from "@/components/ui";
 import Link from "next/link";
 
 export default async function Billing({
@@ -51,7 +52,9 @@ export default async function Billing({
             <span className="stat-label">Available tests</span>
             <Coins size={16} />
           </header>
-          <div className="stat">{status.single + status.monthly}</div>
+          <div className="stat">
+            <CountUp value={status.single + status.monthly} />
+          </div>
           <small>
             {status.enabled
               ? "One credit per audit"
@@ -64,7 +67,7 @@ export default async function Billing({
             <CalendarClock size={16} />
           </header>
           <div className="stat">
-            {status.monthly}
+            <CountUp value={status.monthly} />
             <small className="muted"> / 20</small>
           </div>
           <div className="bar tone-good" style={{ margin: "4px 0 2px" }}>
@@ -85,7 +88,9 @@ export default async function Billing({
             <span className="stat-label">Purchased tests remaining</span>
             <Ticket size={16} />
           </header>
-          <div className="stat">{status.single}</div>
+          <div className="stat">
+            <CountUp value={status.single} />
+          </div>
           <small>No expiry · used after monthly credits</small>
         </section>
       </div>

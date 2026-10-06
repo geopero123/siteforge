@@ -857,7 +857,7 @@ a.chip:hover {
   letter-spacing: -0.04em;
   font-weight: 650;
 }
-.proof-strip span {
+.proof-strip div > span {
   color: var(--muted);
   font-size: 13px;
 }
@@ -1638,7 +1638,7 @@ a.list-row:hover {
   letter-spacing: -0.05em;
   line-height: 1;
 }
-.score-ring-label span {
+.score-ring-label .score-ring-caption {
   font-size: 12px;
   color: var(--muted);
   margin-top: 4px;
@@ -1650,7 +1650,7 @@ a.list-row:hover {
 .score-ring.small .score-ring-label strong {
   font-size: 24px;
 }
-.score-ring.small .score-ring-label span {
+.score-ring.small .score-ring-caption {
   display: none;
 }
 .score-side {
@@ -1772,7 +1772,7 @@ a.list-row:hover {
   font-weight: 650;
   letter-spacing: -0.03em;
 }
-.repo-stats span {
+.repo-stats div > span {
   font-size: 12px;
   color: var(--muted);
 }
@@ -2451,10 +2451,429 @@ a.source-link:hover {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ---------- Motion ---------- */
+/* Entrances fill "backwards": hidden until they start, then nothing is left
+   behind. A filled-forwards transform or filter would stay on the element and
+   trap its position: fixed children (the issue drawer) and fixed backgrounds.
+   Reduced-motion users get the resting state at once (see the rule in Misc),
+   and scroll reveals only run where the browser supports them natively. */
+@property --n {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+@property --angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes rise-big {
+  from {
+    opacity: 0;
+    transform: translateY(44px) scale(0.96);
+  }
+}
+@keyframes blur-in {
+  from {
+    opacity: 0;
+    filter: blur(14px);
+    transform: translateY(14px);
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes ring-draw {
+  from {
+    stroke-dashoffset: var(--full);
+  }
+}
+@keyframes count {
+  from {
+    --n: var(--from, 0);
+  }
+}
+@keyframes text-shine {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes scan {
+  0% {
+    background-position: 0 -70%;
+  }
+  40%,
+  100% {
+    background-position: 0 170%;
+  }
+}
+@keyframes float {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes aurora {
+  0% {
+    transform: translate(-50%, 0) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate(-44%, 40px) rotate(10deg) scale(1.1);
+  }
+  100% {
+    transform: translate(-56%, -20px) rotate(-8deg) scale(0.95);
+  }
+}
+@keyframes spin-angle {
+  to {
+    --angle: 360deg;
+  }
+}
+@keyframes shine-sweep {
+  from {
+    transform: translateX(-160%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(360%) skewX(-20deg);
+  }
+}
+@keyframes glow {
+  50% {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.1) inset,
+      0 10px 40px rgb(98 227 137 / 0.45);
+  }
+}
+
+/* Numbers count up from --from (default 0) to --to. Screen readers get the
+   final value from a visually hidden copy, so the counter is aria-hidden. */
+.count {
+  --n: var(--to, 0);
+  counter-reset: n var(--n);
+  animation: count 1.4s var(--ease-out) backwards;
+  animation-delay: var(--d, 0.1s);
+  font-variant-numeric: tabular-nums;
+}
+.count::before {
+  content: counter(n);
+}
+
+/* Shared primary-button shine on hover. */
+.button.primary {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.button.primary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.5),
+    transparent
+  );
+  transform: translateX(-160%) skewX(-20deg);
+  pointer-events: none;
+}
+.button.primary:hover::after {
+  animation: shine-sweep 0.9s var(--ease-out);
+}
+
+/* Landing: background, hero entrance and the live report preview. */
+.marketing {
+  isolation: isolate;
+}
+.marketing::before {
+  z-index: -1;
+}
+.marketing::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -260px;
+  left: 50%;
+  width: min(1100px, 150vw);
+  height: 760px;
+  background:
+    radial-gradient(closest-side, rgb(98 227 137 / 0.16), transparent 70%),
+    radial-gradient(
+      closest-side at 72% 62%,
+      rgb(95 209 196 / 0.13),
+      transparent 70%
+    ),
+    radial-gradient(
+      closest-side at 24% 70%,
+      rgb(111 181 255 / 0.1),
+      transparent 70%
+    );
+  filter: blur(24px);
+  animation: aurora 24s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.topbar {
+  animation: fade-in 0.8s ease backwards;
+}
+.hero-copy > * {
+  animation: rise 0.9s var(--ease-out) backwards;
+}
+.hero-copy > :nth-child(1) {
+  animation-delay: 0.05s;
+}
+.hero-copy > h1 {
+  animation: blur-in 1.1s var(--ease-out) 0.12s backwards;
+}
+.hero-copy > :nth-child(3) {
+  animation-delay: 0.3s;
+}
+.hero-copy > :nth-child(4) {
+  animation-delay: 0.42s;
+}
+.hero-copy > :nth-child(5) {
+  animation-delay: 0.54s;
+}
+.gradient-text {
+  background: linear-gradient(
+      100deg,
+      #c6ffd3 0%,
+      var(--accent) 25%,
+      #5fd1c4 50%,
+      var(--accent) 75%,
+      #c6ffd3 100%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: text-shine 8s linear infinite;
+}
+.preview-wrap {
+  animation: rise-big 1.2s var(--ease-out) 0.25s backwards;
+}
+.preview-card {
+  --d: 0.75s;
+  --bar-d: 0.85s;
+}
+/* A scanner band sweeps the report every few seconds. */
+.preview-card::before,
+.browser-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+      180deg,
+      transparent,
+      rgb(143 240 164 / 0.08) 40%,
+      rgb(143 240 164 / 0.5) 50%,
+      rgb(143 240 164 / 0.08) 60%,
+      transparent
+    )
+    no-repeat 0 -70% / 100% 38%;
+  pointer-events: none;
+}
+.preview-card::before {
+  animation: scan 7s ease-in-out 1.4s infinite;
+}
+.preview-finding {
+  animation: rise 0.6s var(--ease-out) backwards;
+  animation-delay: calc(1.15s + var(--i, 0) * 0.14s);
+}
+.preview-finding .badge {
+  animation: pop 0.5s var(--ease-spring) backwards;
+  animation-delay: calc(1.25s + var(--i, 0) * 0.14s);
+}
+.preview-diff .diff-lines > div {
+  animation: rise 0.5s var(--ease-out) backwards;
+  animation-delay: calc(1.85s + var(--i, 0) * 0.12s);
+}
+.floating-note {
+  animation:
+    pop 0.6s var(--ease-spring) 2.3s backwards,
+    float 5s ease-in-out 3s infinite;
+}
+
+/* Score rings draw in and their bars grow, wherever they appear. */
+.score-ring .value {
+  animation: ring-draw 1.5s var(--ease-out) backwards;
+  animation-delay: var(--d, 0.15s);
+}
+.bar i {
+  transform-origin: left center;
+  animation: grow-x 1.1s var(--ease-out) backwards;
+  animation-delay: calc(var(--bar-d, 0.25s) + var(--i, 0) * 0.06s);
+}
+
+/* Feature grid: the borders and cards light up around the pointer.
+   --mx/--my are relative to the grid (see Spotlight), not the viewport:
+   background-attachment: fixed stops working while the reveal transforms it. */
+.feature-grid {
+  position: relative;
+  background:
+    radial-gradient(
+      520px circle at var(--mx, -1000px) var(--my, -1000px),
+      rgb(143 240 164 / 0.55),
+      transparent 45%
+    ),
+    var(--line);
+}
+.feature-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    420px circle at var(--mx, -1000px) var(--my, -1000px),
+    rgb(143 240 164 / 0.08),
+    transparent 50%
+  );
+  pointer-events: none;
+}
+.feature-icon {
+  transition:
+    transform 0.3s var(--ease-spring),
+    box-shadow 0.3s;
+}
+.feature:hover .feature-icon {
+  transform: translateY(-3px) scale(1.06);
+  box-shadow: 0 0 28px rgb(143 240 164 / 0.35);
+}
+
+/* The featured plan's border runs a slow light around it. */
+.pricing-card.featured::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--angle),
+    transparent 0deg,
+    var(--accent) 50deg,
+    transparent 120deg 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: spin-angle 6s linear infinite;
+  pointer-events: none;
+}
+.cta-band .button.primary {
+  animation: glow 3.2s ease-in-out infinite;
+}
+
+/* Sections fade up as they scroll into view. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: rise linear backwards;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+  }
+}
+
+/* Workspace: each page settles in, then lists stagger. */
+/* The issue drawer and its backdrop keep their own slide and fade. */
+.main > :where(:not(.detail, .backdrop)) {
+  animation: rise 0.55s var(--ease-out) backwards;
+  animation-delay: var(--enter, 0s);
+}
+.main > :nth-child(2) {
+  --enter: 0.05s;
+}
+.main > :nth-child(3) {
+  --enter: 0.1s;
+}
+.main > :nth-child(4) {
+  --enter: 0.15s;
+}
+.main > :nth-child(n + 5) {
+  --enter: 0.2s;
+}
+.grid-4 > *,
+.grid-3 > .stat-card,
+.project-card,
+.table tbody tr,
+.issue-row {
+  animation: rise 0.5s var(--ease-out) backwards;
+  animation-delay: calc(0.1s + var(--i, 0) * 0.04s);
+}
+.grid-4 > :nth-child(2),
+.grid-3 > .stat-card:nth-child(2) {
+  --i: 1;
+}
+.grid-4 > :nth-child(3),
+.grid-3 > .stat-card:nth-child(3) {
+  --i: 2;
+}
+.grid-4 > :nth-child(4) {
+  --i: 3;
+}
+.severity-count {
+  animation: pop 0.45s var(--ease-spring) backwards;
+  animation-delay: calc(0.3s + var(--i, 0) * 0.05s);
+}
+.activity-entry {
+  animation: rise 0.45s var(--ease-out) backwards;
+}
+.detail-body > * {
+  animation: rise 0.5s var(--ease-out) backwards;
+  animation-delay: 0.12s;
+}
+.detail-body > :nth-child(n + 4) {
+  animation-delay: 0.2s;
+}
+.browser-screen {
+  position: relative;
+}
+.browser-screen::after {
+  animation: scan 2.6s linear infinite;
+}
+.mode-option svg {
+  transition: transform 0.35s var(--ease-spring);
+}
+.mode-option:has(input:checked) svg {
+  transform: scale(1.15);
+}
+.issue-row > svg:last-child,
+.project-card header svg,
+.section-title a svg {
+  transition: transform 0.25s var(--ease-out);
+}
+.issue-row:hover > svg:last-child,
+.section-title a:hover svg {
+  transform: translateX(3px);
+}
+.project-card:hover header svg {
+  transform: translate(2px, -2px);
 }
 
 /* ---------- Responsive ---------- */

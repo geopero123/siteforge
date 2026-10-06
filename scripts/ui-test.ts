@@ -240,6 +240,13 @@ try {
   });
 
   const report = app + "/dashboard/audits/a1000000-0000-4000-8000-000000000001";
+  // The ring draws its number with a CSS counter; its label carries the value.
+  const reportScore = async () =>
+    Number(
+      (
+        await page.locator(".score-ring").first().getAttribute("aria-label")
+      )?.match(/\d+/)?.[0],
+    );
   await step("report renders score, summary and findings", async () => {
     await page.goto(report);
     await page.locator(".score-ring").waitFor();
@@ -276,10 +283,7 @@ try {
   await step(
     "resolving a finding updates the drawer, list and score",
     async () => {
-      const before = await page
-        .locator(".score-ring-label strong")
-        .first()
-        .textContent();
+      const before = await reportScore();
       await page.locator(".issue-row").first().click();
       await page.locator(".detail").waitFor();
       expect(
@@ -288,13 +292,16 @@ try {
       );
       await page.click(".detail >> text=Mark resolved");
       await page.locator(".detail .badge.resolved").waitFor();
-      const after = await page
-        .locator(".score-ring-label strong")
-        .first()
-        .textContent();
-      expect(
-        Number(after) > Number(before),
-        `score should rise: ${before} -> ${after}`,
+      const after = await reportScore();
+      expect(after > before, `score should rise: ${before} -> ${after}`);
+      // The visible number follows too, not just the label.
+      await page.waitForFunction(
+        (score) =>
+          getComputedStyle(
+            document.querySelector(".score-ring .count")!,
+          ).getPropertyValue("--n") === String(score),
+        after,
+        { timeout: 5000 },
       );
       await page.click(".detail >> text=Reopen");
       await page

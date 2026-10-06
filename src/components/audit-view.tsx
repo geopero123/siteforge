@@ -35,6 +35,7 @@ import { Activity } from "./audit-activity";
 import { IssueDetail } from "./issue-detail";
 import { LiveBrowser } from "./live-browser";
 import {
+  CountUp,
   GithubMark,
   ScoreRing,
   StatusBadge,
@@ -360,7 +361,7 @@ export function AuditView({ id }: { id: string }) {
                     </small>
                   </header>
                   <div className="severity-summary">
-                    {severities.map((s) => {
+                    {severities.map((s, index) => {
                       const count = open.filter(
                         (i) => i.data.severity === s,
                       ).length;
@@ -369,7 +370,10 @@ export function AuditView({ id }: { id: string }) {
                           type="button"
                           key={s}
                           className={`severity-count ${count ? "" : "zero"}`}
-                          style={{ ["--tone" as string]: `var(--${s})` }}
+                          style={{
+                            ["--tone" as string]: `var(--${s})`,
+                            ["--i" as string]: index,
+                          }}
                           onClick={() => {
                             setSeverity(severity === s ? "" : s);
                             setStatusFilter("open");
@@ -395,16 +399,19 @@ export function AuditView({ id }: { id: string }) {
                             : 3,
                     }}
                   >
-                    {scope.map((c) => {
+                    {scope.map((c, index) => {
                       const value = currentScore.categories[c] ?? 100;
                       return (
                         <div
                           key={c}
                           className={`score-item ${scoreTone(value)}`}
+                          style={{ ["--i" as string]: index }}
                         >
                           <span>
                             {categoryLabel(c)}
-                            <strong>{value}</strong>
+                            <strong>
+                              <CountUp value={value} />
+                            </strong>
                           </span>
                           <div className="bar">
                             <i style={{ width: value + "%" }} />
@@ -453,19 +460,31 @@ export function AuditView({ id }: { id: string }) {
                   </div>
                   <div className="repo-stats">
                     <div>
-                      <strong>{audit.report.repository.files}</strong>
+                      <strong>
+                        <CountUp value={audit.report.repository.files} />
+                      </strong>
                       <span>files indexed</span>
                     </div>
                     <div>
-                      <strong>{audit.report.repository.analyzedFiles}</strong>
+                      <strong>
+                        <CountUp
+                          value={audit.report.repository.analyzedFiles}
+                        />
+                      </strong>
                       <span>checked by static rules</span>
                     </div>
                     <div>
-                      <strong>{audit.report.repository.reviewedFiles}</strong>
+                      <strong>
+                        <CountUp
+                          value={audit.report.repository.reviewedFiles}
+                        />
+                      </strong>
                       <span>reviewed by AI</span>
                     </div>
                     <div>
-                      <strong>{audit.report.repository.dependencies}</strong>
+                      <strong>
+                        <CountUp value={audit.report.repository.dependencies} />
+                      </strong>
                       <span>dependency versions</span>
                     </div>
                   </div>
@@ -590,12 +609,13 @@ export function AuditView({ id }: { id: string }) {
               </div>
             )}
             <div className="issue-list">
-              {filtered.map((i) => {
+              {filtered.map((i, index) => {
                 const source = i.data.url.startsWith("https://github.com/");
                 return (
                   <button
                     className={`issue-row ${i.data.severity} ${i.status === "open" ? "" : "is-closed"}`}
                     key={i.id}
+                    style={{ ["--i" as string]: Math.min(index, 12) }}
                     onClick={() => setSelected(i.id)}
                   >
                     <span className={"badge " + i.data.severity}>

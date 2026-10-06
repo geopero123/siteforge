@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { pageSession } from "@/lib/supabase/server";
 import {
+  CountUp,
   GithubMark,
   StatusBadge,
   displayTarget,
@@ -76,7 +77,7 @@ export default async function Dashboard() {
               className={"stat " + (tone ?? "")}
               style={tone ? { color: "var(--tone)" } : undefined}
             >
-              {value}
+              {typeof value === "number" ? <CountUp value={value} /> : value}
             </div>
           </div>
         ))}
@@ -109,8 +110,11 @@ export default async function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((a) => (
-                <tr key={a.id}>
+              {rows.map((a, index) => (
+                <tr
+                  key={a.id}
+                  style={{ ["--i" as string]: Math.min(index, 12) }}
+                >
                   <td className="target-cell">
                     <div className="target">
                       {a.url ? <Globe size={16} /> : <GithubMark size={15} />}

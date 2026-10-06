@@ -5,7 +5,7 @@ import { plans } from "@/lib/billing/plans";
 export function Pricing({ children }: { children?: React.ReactNode }) {
   return (
     <section id="pricing" className="pricing-section">
-      <div className="section-head">
+      <div className="section-head reveal">
         <div className="eyebrow">Pricing</div>
         <h2>Test once. Or keep shipping with confidence.</h2>
         <p>
@@ -14,7 +14,7 @@ export function Pricing({ children }: { children?: React.ReactNode }) {
         </p>
       </div>
       <div className="pricing-grid">
-        <article className="panel pricing-card">
+        <article className="panel pricing-card reveal">
           <h3>{plans.single.name}</h3>
           <p>For a launch, a fix, or a second opinion.</p>
           <div className="pricing-price">
@@ -41,7 +41,7 @@ export function Pricing({ children }: { children?: React.ReactNode }) {
             </Link>
           )}
         </article>
-        <article className="panel pricing-card featured">
+        <article className="panel pricing-card featured reveal">
           <span className="badge accent">Best value</span>
           <h3>{plans.monthly.name}</h3>
           <p>Keep checking as your website and code change.</p>

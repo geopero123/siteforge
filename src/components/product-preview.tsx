@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { GitPullRequestArrow } from "lucide-react";
 import { ScoreRing, scoreTone } from "./ui";
 
@@ -15,7 +16,14 @@ const findings: Array<[string, string, string]> = [
   ["medium", "Missing content-security-policy header", "shop.example.com"],
 ];
 
-// Static illustration of a report for the marketing and sign-in pages.
+const previewDiff: Array<[string, string]> = [
+  ["hunk", "@@ src/server/orders.ts:42 @@"],
+  ["del", "- db.query(`… WHERE id = ${id}`)"],
+  ["add", '+ db.query("… WHERE id = $1", [id])'],
+];
+
+// Illustration of a report for the marketing and sign-in pages. It plays a
+// short scan animation on load (see the Motion section in globals.css).
 export function ProductPreview({ withNote = true }: { withNote?: boolean }) {
   return (
     <div className="preview-wrap" aria-hidden>
@@ -32,8 +40,12 @@ export function ProductPreview({ withNote = true }: { withNote?: boolean }) {
           <div className="preview-score">
             <ScoreRing score={74} size="small" />
             <div className="preview-bars">
-              {bars.map(([label, value]) => (
-                <div key={label} className={`score-item ${scoreTone(value)}`}>
+              {bars.map(([label, value], index) => (
+                <div
+                  key={label}
+                  className={`score-item ${scoreTone(value)}`}
+                  style={{ "--i": index } as CSSProperties}
+                >
                   <span>
                     {label}
                     <strong>{value}</strong>
@@ -46,8 +58,12 @@ export function ProductPreview({ withNote = true }: { withNote?: boolean }) {
             </div>
           </div>
           <div className="preview-findings">
-            {findings.map(([severity, title, location]) => (
-              <div className="preview-finding" key={title}>
+            {findings.map(([severity, title, location], index) => (
+              <div
+                className="preview-finding"
+                key={title}
+                style={{ "--i": index } as CSSProperties}
+              >
                 <span className={`badge ${severity}`}>{severity}</span>
                 <strong>{title}</strong>
                 <small>{location}</small>
@@ -56,11 +72,15 @@ export function ProductPreview({ withNote = true }: { withNote?: boolean }) {
           </div>
           <div className="diff preview-diff">
             <div className="diff-lines">
-              <div className="hunk">@@ src/server/orders.ts:42 @@</div>
-              <div className="del">- db.query(`… WHERE id = {"${id}"}`)</div>
-              <div className="add">
-                + db.query(&quot;… WHERE id = $1&quot;, [id])
-              </div>
+              {previewDiff.map(([kind, line], index) => (
+                <div
+                  key={index}
+                  className={kind}
+                  style={{ "--i": index } as CSSProperties}
+                >
+                  {line}
+                </div>
+              ))}
             </div>
           </div>
         </div>
