@@ -51,6 +51,19 @@ const features = [
   },
 ];
 
+// Kept as strings so the code indentation survives JSX whitespace rules.
+const examplePatch: Array<[string, string]> = [
+  ["file", "--- a/src/components/PromoBanner.tsx"],
+  ["file", "+++ b/src/components/PromoBanner.tsx"],
+  ["hunk", "@@ -14,5 +14,5 @@"],
+  ["", " export function PromoBanner() {"],
+  ["", "   return ("],
+  ["del", "-    <div style={{ width: 600 }}>"],
+  ["add", '+    <div style={{ maxWidth: 600, width: "100%" }}>'],
+  ["", "       Free shipping on orders over $50"],
+  ["", "     </div>"],
+];
+
 export default function Landing() {
   return (
     <div className="marketing">
@@ -208,23 +221,11 @@ export default function Landing() {
               </div>
               <div className="diff" style={{ border: 0, borderRadius: 0 }}>
                 <div className="diff-lines">
-                  <div className="file">
-                    --- a/src/components/PromoBanner.tsx
-                  </div>
-                  <div className="file">
-                    +++ b/src/components/PromoBanner.tsx
-                  </div>
-                  <div className="hunk">@@ -14,5 +14,5 @@</div>
-                  <div> export function PromoBanner() {"{"}</div>
-                  <div> return (</div>
-                  <div className="del">
-                    - &lt;div style={"{{ width: 600 }}"}&gt;
-                  </div>
-                  <div className="add">
-                    + &lt;div style={'{{ maxWidth: 600, width: "100%" }}'}&gt;
-                  </div>
-                  <div> Free shipping on orders over $50</div>
-                  <div> &lt;/div&gt;</div>
+                  {examplePatch.map(([kind, line], index) => (
+                    <div key={index} className={kind || undefined}>
+                      {line}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

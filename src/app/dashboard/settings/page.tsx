@@ -91,7 +91,9 @@ export default async function Settings() {
             {severities.map((s) => (
               <div key={s}>
                 <span className={"badge " + s}>{s}</span>
-                <span className="mono">−{weights[s]} × confidence</span>
+                <span className="mono">
+                  {weights[s] ? `−${weights[s]} × confidence` : "No deduction"}
+                </span>
               </div>
             ))}
           </div>

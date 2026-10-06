@@ -118,6 +118,13 @@ h3 {
   letter-spacing: -0.01em;
   margin-bottom: 8px;
 }
+/* Tailwind's reset makes icons block-level; keep heading icons on the text line. */
+:where(h1, h2, h3) > svg {
+  display: inline-block;
+  vertical-align: -0.15em;
+  margin-right: 8px;
+  color: var(--muted);
+}
 p {
   color: var(--muted);
   margin-bottom: 14px;
@@ -410,9 +417,12 @@ label small {
   font-size: 11px;
   font-weight: 550;
   letter-spacing: 0.01em;
-  text-transform: capitalize;
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Severity names arrive lowercase from report data. */
+.badge:is(.critical, .high, .medium, .low, .info) {
+  text-transform: capitalize;
 }
 .badge.dot::before {
   content: "";
@@ -1268,6 +1278,7 @@ a.chip:hover {
 }
 .panel-title h2 svg {
   color: var(--muted);
+  margin-right: 0;
 }
 .panel-sub {
   margin: -10px 0 18px;
