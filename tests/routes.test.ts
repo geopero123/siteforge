@@ -189,3 +189,35 @@ it("reports an unreachable website as a 400 with a readable message", async () =
   expect(response.status).toBe(400);
   expect((await response.json()).error).toContain("Couldn't find");
 });
+it("explains the hourly audit limit enforced by the database", async () => {
+  const chain = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    insert: vi.fn(),
+    in: vi.fn(async () => ({ count: 0, error: null })),
+    maybeSingle: vi.fn(async () => ({
+      data: { repository: null },
+      error: null,
+    })),
+    single: vi.fn(async () => ({
+      data: null,
+      error: { message: "AUDIT_RATE_LIMITED" },
+    })),
+  };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockReturnValue(chain);
+  chain.insert.mockReturnValue(chain);
+  vi.mocked(requireUser).mockResolvedValue({
+    db: { from: vi.fn(() => chain) },
+    user: { id: "owner" },
+  } as never);
+  const response = await auditPost(
+    request({
+      projectId: crypto.randomUUID(),
+      repository: "acme/app",
+      mode: "repository",
+    }),
+  );
+  expect(response.status).toBe(429);
+  expect((await response.json()).error).toContain("10 audits in the last hour");
+});

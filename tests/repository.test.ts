@@ -528,6 +528,37 @@ describe("repository scan", () => {
       { path: "logo.png", size: 4 },
     ]);
   });
+  it("uses the public token for other users and never downloads private code with it", async () => {
+    vi.stubEnv("GITHUB_PUBLIC_TOKEN", "public-token");
+    vi.stubEnv("GITHUB_TOKEN", "private-token");
+    vi.stubEnv("GITHUB_TOKEN_USER_ID", "owner");
+    vi.stubEnv("GITHUB_REPOSITORIES", "acme/secret");
+    const seen: Array<string | undefined> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        seen.push(
+          (init?.headers as Record<string, string> | undefined)?.Authorization,
+        );
+        return Response.json({ default_branch: "main", private: true });
+      }),
+    );
+    await expect(
+      fetchRepositorySnapshot(
+        { owner: "acme", repo: "secret" },
+        "someone-else",
+      ),
+    ).rejects.toThrow("not found");
+    expect(seen).toEqual(["Bearer public-token"]);
+    // The configured owner still gets the private token for allowlisted repos.
+    seen.length = 0;
+    await fetchRepositorySnapshot(
+      { owner: "acme", repo: "secret" },
+      "owner",
+    ).catch(() => {});
+    expect(seen[0]).toBe("Bearer private-token");
+    vi.unstubAllEnvs();
+  });
   it("explains missing repositories", async () => {
     vi.stubGlobal(
       "fetch",

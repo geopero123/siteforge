@@ -76,6 +76,15 @@ export async function POST(request: Request) {
         },
         { status: 429 },
       );
+    if (error?.message.includes("AUDIT_RATE_LIMITED"))
+      return NextResponse.json(
+        {
+          error:
+            "You’ve started 10 audits in the last hour. Try again a little later.",
+          code: "AUDIT_RATE_LIMITED",
+        },
+        { status: 429 },
+      );
     if (error) throw new Error(error.message);
     return NextResponse.json(data, { status: 202 });
   } catch (e) {

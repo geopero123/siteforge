@@ -21,18 +21,25 @@ export interface RepositorySnapshot {
   truncated: boolean;
 }
 
-// A worker token is available only to its configured user and repositories.
+// The private token serves only its configured user and repositories. Everyone
+// else shares GITHUB_PUBLIC_TOKEN (public repositories only) or no token at all,
+// which GitHub limits to 60 requests an hour per worker.
 export function tokenFor(reference: RepositoryReference, userId?: string) {
   const allowed = (process.env.GITHUB_REPOSITORIES ?? "")
     .split(",")
     .map((name) => name.trim().toLowerCase())
     .filter(Boolean);
   const name = `${reference.owner}/${reference.repo}`.toLowerCase();
-  return userId &&
+  if (
+    userId &&
     userId === process.env.GITHUB_TOKEN_USER_ID &&
     allowed.includes(name)
-    ? process.env.GITHUB_TOKEN
-    : undefined;
+  )
+    return { token: process.env.GITHUB_TOKEN, publicOnly: false };
+  return {
+    token: process.env.GITHUB_PUBLIC_TOKEN || undefined,
+    publicOnly: true,
+  };
 }
 
 function headers(token?: string) {
@@ -59,7 +66,7 @@ export async function fetchGitHubJson(path: string, token?: string) {
       response.headers.get("x-ratelimit-remaining") === "0")
   )
     throw new Error(
-      "GitHub rate limit reached. Configure GITHUB_TOKEN on the worker or retry later.",
+      "GitHub rate limit reached. Configure GITHUB_PUBLIC_TOKEN on the worker or retry later.",
     );
   if (response.status === 403 || response.status === 401)
     throw new Error(
@@ -103,11 +110,18 @@ export async function fetchRepositorySnapshot(
   userId?: string,
   signal?: AbortSignal,
 ): Promise<RepositorySnapshot> {
-  const token = tokenFor(reference, userId);
+  const { token, publicOnly } = tokenFor(reference, userId);
   const base = `repos/${reference.owner}/${reference.repo}`;
   const metadata = (await fetchGitHubJson(base, token)) as {
     default_branch: string;
+    private?: boolean;
   };
+  // The shared token must never expose private code, even if it was created
+  // with more access than public repositories.
+  if (publicOnly && metadata.private)
+    throw new Error(
+      "GitHub repository or branch not found. Private repositories need an authorized worker token.",
+    );
   const branch = reference.ref ?? metadata.default_branch;
   const commit = (await fetchGitHubJson(
     `${base}/commits/${encodeURIComponent(branch)}`,
