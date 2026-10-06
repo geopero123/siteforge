@@ -2569,13 +2569,16 @@ a.source-link:hover {
   }
 }
 
-/* Numbers count up from --from (default 0) to --to. Screen readers get the
-   final value from a visually hidden copy, so the counter is aria-hidden. */
+/* Numbers count up from --from (default 0) to --to, and count again when
+   --to changes, in step with the ring and bars (a resolved finding raises
+   the score). Screen readers get the value from a visually hidden copy, so
+   the counter is aria-hidden. */
 .count {
   --n: var(--to, 0);
   counter-reset: n var(--n);
   animation: count 1.4s var(--ease-out) backwards;
   animation-delay: var(--d, 0.1s);
+  transition: --n 0.8s ease;
   font-variant-numeric: tabular-nums;
 }
 .count::before {
@@ -2729,6 +2732,7 @@ a.source-link:hover {
   transform-origin: left center;
   animation: grow-x 1.1s var(--ease-out) backwards;
   animation-delay: calc(var(--bar-d, 0.25s) + var(--i, 0) * 0.06s);
+  transition: width 0.8s ease;
 }
 
 /* Feature grid: the borders and cards light up around the pointer.
