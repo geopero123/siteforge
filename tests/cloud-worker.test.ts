@@ -3,10 +3,16 @@ const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
   create: vi.fn(),
   admin: vi.fn(),
+  generateContent: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.readFile }));
 vi.mock("@vercel/sandbox", () => ({ Sandbox: { create: mocks.create } }));
 vi.mock("../src/lib/supabase/admin", () => ({ adminDb: mocks.admin }));
+vi.mock("@google/genai", () => ({
+  GoogleGenAI: class {
+    models = { generateContent: mocks.generateContent };
+  },
+}));
 import {
   dispatchQueuedAudit,
   workerConfigurationError,
@@ -25,6 +31,7 @@ beforeEach(() => {
   ])
     vi.stubEnv(key, key === "VERCEL" ? "1" : `private-${key}`);
   vi.stubEnv("AUDIT_WORKER_MODE", "");
+  vi.stubEnv("GEMINI_MODEL", "gemini-3.8-flash");
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -107,6 +114,7 @@ it("isolates networking before injecting credentials and starts only the reserve
       WORKER_AUDIT_ID: "audit-one",
       NODE_ENV: "production",
       AUDIT_EGRESS_ISOLATED: "true",
+      GEMINI_MODEL: "gemini-3.8-flash",
     },
   });
   expect(mocks.create.mock.calls[0][0].persistent).toBe(false);
@@ -151,6 +159,65 @@ it("rejects an unauthorized recovery request before touching the database", asyn
   );
   expect(response.status).toBe(401);
   expect(mocks.admin).not.toHaveBeenCalled();
+});
+
+it("requires authentication before running a billable AI connection test", async () => {
+  const response = await POST(
+    new Request("https://example.com/api/worker", {
+      method: "POST",
+      body: JSON.stringify({ action: "verify-ai" }),
+    }),
+  );
+  expect(response.status).toBe(401);
+  expect(mocks.generateContent).not.toHaveBeenCalled();
+});
+
+it("verifies structured output using the available default model without creating an audit", async () => {
+  vi.stubEnv("GEMINI_MODEL", "");
+  mocks.generateContent.mockResolvedValue({
+    text: '{"issues":[],"summary":"Connection successful"}',
+  });
+  const response = await POST(
+    new Request("https://example.com/api/worker", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${process.env.WORKER_DISPATCH_SECRET}`,
+      },
+      body: JSON.stringify({ action: "verify-ai" }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    ready: true,
+    model: "gemini-3.8-flash",
+  });
+  expect(mocks.generateContent).toHaveBeenCalledWith(
+    expect.objectContaining({
+      model: "gemini-3.8-flash",
+      config: expect.objectContaining({ responseMimeType: "application/json" }),
+    }),
+  );
+  expect(mocks.admin).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
+});
+
+it("does not expose provider errors or credentials in a failed connection response", async () => {
+  mocks.generateContent.mockRejectedValue(
+    new Error("provider private-api-key"),
+  );
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const response = await POST(
+    new Request("https://example.com/api/worker", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${process.env.WORKER_DISPATCH_SECRET}`,
+      },
+      body: JSON.stringify({ action: "verify-ai" }),
+    }),
+  );
+  expect(response.status).toBe(502);
+  expect(await response.text()).not.toContain("private-api-key");
+  log.mockRestore();
 });
 
 it("refreshes a template without exposing database or AI credentials", async () => {
