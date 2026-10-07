@@ -37,18 +37,34 @@ export async function POST(request: Request) {
   // Verify the production model with the same provider as audits, without
   // creating an audit or exposing the API key to the caller.
   if (input.action === "verify-ai") {
-    if (input.probe && !["text", "small", "minimal"].includes(input.probe))
+    if (
+      input.probe &&
+      !["text", "small", "minimal", "legacy"].includes(input.probe)
+    )
       return NextResponse.json({ error: "Unknown probe." }, { status: 400 });
     try {
+      console.info("Gemini connection test started:", input.probe || "report");
       const provider = new GeminiProvider();
-      if (input.probe === "minimal") {
+      if (input.probe === "legacy") {
         const response = await new GoogleGenAI({
           apiKey: process.env.GEMINI_API_KEY,
-        }).interactions.create({
+          httpOptions: { timeout: 15000 },
+        }).models.generateContent({
           model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
-          input: "Reply with the word ready.",
-          store: false,
+          contents: "Reply with the word ready.",
         });
+        if (!response.text?.trim()) throw new Error("Empty Gemini response.");
+      } else if (input.probe === "minimal") {
+        const response = await new GoogleGenAI({
+          apiKey: process.env.GEMINI_API_KEY,
+        }).interactions.create(
+          {
+            model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+            input: "Reply with the word ready.",
+            store: false,
+          },
+          { timeout: 15000, maxRetries: 0 },
+        );
         if (!response.output_text?.trim())
           throw new Error("Empty Gemini response.");
       } else if (input.probe === "text") {
@@ -69,6 +85,10 @@ export async function POST(request: Request) {
         if (result.issues.length || !result.summary.trim())
           throw new Error("Gemini connection test did not pass.");
       }
+      console.info(
+        "Gemini connection test succeeded:",
+        input.probe || "report",
+      );
       return NextResponse.json({
         ready: true,
         model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,

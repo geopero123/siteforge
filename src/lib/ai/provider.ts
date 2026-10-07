@@ -36,13 +36,16 @@ export class GeminiProvider implements AIProvider {
     this.model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   }
   async generate(prompt: string) {
-    const response = await this.client.interactions.create({
-      model: this.model,
-      input: redactSecrets(prompt),
-      system_instruction: analystInstructions,
-      generation_config: { max_output_tokens: 6000 },
-      store: false,
-    });
+    const response = await this.client.interactions.create(
+      {
+        model: this.model,
+        input: redactSecrets(prompt),
+        system_instruction: analystInstructions,
+        generation_config: { max_output_tokens: 6000 },
+        store: false,
+      },
+      { timeout: 45000, maxRetries: 0 },
+    );
     return response.output_text ?? "";
   }
   async generateStructured<T>(
@@ -82,30 +85,33 @@ export class GeminiProvider implements AIProvider {
     // Retry schema/JSON validation once; request failures still propagate immediately.
     let lastValidationError = "";
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await this.client.interactions.create({
-        model: this.model,
-        input: [
-          ...parts,
-          ...(attempt
-            ? [
-                {
-                  type: "text" as const,
-                  text:
-                    "Previous response did not validate. Return strictly valid JSON matching the supplied schema. Validation error: " +
-                    redactSecrets(lastValidationError.slice(0, 1000)),
-                },
-              ]
-            : []),
-        ],
-        system_instruction: analystInstructions,
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: responseSchema,
+      const response = await this.client.interactions.create(
+        {
+          model: this.model,
+          input: [
+            ...parts,
+            ...(attempt
+              ? [
+                  {
+                    type: "text" as const,
+                    text:
+                      "Previous response did not validate. Return strictly valid JSON matching the supplied schema. Validation error: " +
+                      redactSecrets(lastValidationError.slice(0, 1000)),
+                  },
+                ]
+              : []),
+          ],
+          system_instruction: analystInstructions,
+          response_format: {
+            type: "text",
+            mime_type: "application/json",
+            schema: responseSchema,
+          },
+          generation_config: { max_output_tokens: 16000 },
+          store: false,
         },
-        generation_config: { max_output_tokens: 16000 },
-        store: false,
-      });
+        { timeout: 45000, maxRetries: 0 },
+      );
       try {
         return schema.parse(JSON.parse(response.output_text ?? ""));
       } catch (e) {

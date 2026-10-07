@@ -201,6 +201,7 @@ it("verifies structured output using the available default model without creatin
         mime_type: "application/json",
       }),
     }),
+    { timeout: 45000, maxRetries: 0 },
   );
   expect(mocks.admin).not.toHaveBeenCalled();
   expect(mocks.create).not.toHaveBeenCalled();
