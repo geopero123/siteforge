@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   admin: vi.fn(),
   generateContent: vi.fn(),
+  interaction: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.readFile }));
 vi.mock("@vercel/sandbox", () => ({ Sandbox: { create: mocks.create } }));
@@ -11,6 +12,7 @@ vi.mock("../src/lib/supabase/admin", () => ({ adminDb: mocks.admin }));
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class {
     models = { generateContent: mocks.generateContent };
+    interactions = { create: mocks.interaction };
   },
 }));
 import {
@@ -169,13 +171,13 @@ it("requires authentication before running a billable AI connection test", async
     }),
   );
   expect(response.status).toBe(401);
-  expect(mocks.generateContent).not.toHaveBeenCalled();
+  expect(mocks.interaction).not.toHaveBeenCalled();
 });
 
 it("verifies structured output using the available default model without creating an audit", async () => {
   vi.stubEnv("GEMINI_MODEL", "");
-  mocks.generateContent.mockResolvedValue({
-    text: '{"issues":[],"summary":"Connection successful"}',
+  mocks.interaction.mockResolvedValue({
+    output_text: '{"issues":[],"summary":"Connection successful"}',
   });
   const response = await POST(
     new Request("https://example.com/api/worker", {
@@ -191,10 +193,13 @@ it("verifies structured output using the available default model without creatin
     ready: true,
     model: "gemini-3.8-flash",
   });
-  expect(mocks.generateContent).toHaveBeenCalledWith(
+  expect(mocks.interaction).toHaveBeenCalledWith(
     expect.objectContaining({
       model: "gemini-3.8-flash",
-      config: expect.objectContaining({ responseMimeType: "application/json" }),
+      store: false,
+      response_format: expect.objectContaining({
+        mime_type: "application/json",
+      }),
     }),
   );
   expect(mocks.admin).not.toHaveBeenCalled();
@@ -202,9 +207,7 @@ it("verifies structured output using the available default model without creatin
 });
 
 it("does not expose provider errors or credentials in a failed connection response", async () => {
-  mocks.generateContent.mockRejectedValue(
-    new Error("provider private-api-key"),
-  );
+  mocks.interaction.mockRejectedValue(new Error("provider private-api-key"));
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
   const response = await POST(
     new Request("https://example.com/api/worker", {

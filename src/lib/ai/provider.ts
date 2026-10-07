@@ -2,7 +2,6 @@ import {
   GoogleGenAI,
   type Content,
   type FunctionDeclaration,
-  type Part,
 } from "@google/genai";
 import { z } from "zod";
 import { redactSecrets } from "../security/redact";
@@ -37,53 +36,55 @@ export class GeminiProvider implements AIProvider {
     this.model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   }
   async generate(prompt: string) {
-    const response = await this.client.models.generateContent({
+    const response = await this.client.interactions.create({
       model: this.model,
-      contents: redactSecrets(prompt),
-      config: { systemInstruction: analystInstructions, maxOutputTokens: 6000 },
+      input: redactSecrets(prompt),
+      system_instruction: analystInstructions,
+      generation_config: { max_output_tokens: 6000 },
+      store: false,
     });
-    return response.text ?? "";
+    return response.output_text ?? "";
   }
   async generateStructured<T>(
     prompt: string,
     schema: z.ZodType<T>,
     images: Buffer[] = [],
   ): Promise<T> {
-    const parts: Part[] = [
-      { text: redactSecrets(prompt.slice(0, 160000)) },
+    const parts = [
+      { type: "text" as const, text: redactSecrets(prompt.slice(0, 160000)) },
       ...images.slice(0, 3).map((image) => ({
-        inlineData: { mimeType: "image/png", data: image.toString("base64") },
+        type: "image" as const,
+        mime_type: "image/png" as const,
+        data: image.toString("base64"),
       })),
     ];
     // Retry schema/JSON validation once; request failures still propagate immediately.
     let lastValidationError = "";
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await this.client.models.generateContent({
+      const response = await this.client.interactions.create({
         model: this.model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              ...parts,
-              ...(attempt
-                ? [
-                    {
-                      text: "Previous response did not validate. Return strictly valid JSON matching the supplied schema.",
-                    },
-                  ]
-                : []),
-            ],
-          },
+        input: [
+          ...parts,
+          ...(attempt
+            ? [
+                {
+                  type: "text" as const,
+                  text: "Previous response did not validate. Return strictly valid JSON matching the supplied schema.",
+                },
+              ]
+            : []),
         ],
-        config: {
-          systemInstruction: analystInstructions,
-          responseMimeType: "application/json",
-          responseJsonSchema: z.toJSONSchema(schema),
-          maxOutputTokens: 16000,
+        system_instruction: analystInstructions,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: z.toJSONSchema(schema),
         },
+        generation_config: { max_output_tokens: 16000 },
+        store: false,
       });
       try {
-        return schema.parse(JSON.parse(response.text ?? ""));
+        return schema.parse(JSON.parse(response.output_text ?? ""));
       } catch (e) {
         lastValidationError = e instanceof Error ? e.message : "Invalid JSON";
       }
