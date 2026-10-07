@@ -52,11 +52,23 @@ it("sends audit reports and image evidence through the actual SDK's Interactions
     body.response_format.schema.properties.issues.items.properties.evidence,
   ).toBeDefined();
   expect(body).not.toHaveProperty("generationConfig.responseJsonSchema");
+  expect(body.response_format.schema).not.toHaveProperty("$schema");
+  expect(body.response_format.schema.properties.issues).not.toHaveProperty(
+    "maxItems",
+  );
+  expect(body.response_format.schema.properties.summary).not.toHaveProperty(
+    "maxLength",
+  );
+  expect(body.response_format.schema.properties.summary.description).toContain(
+    "maxLength: 5000",
+  );
 });
 
 it("repairs an invalid report once and still validates the final response", async () => {
   fetchMock
-    .mockResolvedValueOnce(response('{"issues":[],"summary":42}'))
+    .mockResolvedValueOnce(
+      response(JSON.stringify({ issues: [], summary: "x".repeat(5001) })),
+    )
     .mockResolvedValueOnce(response(JSON.stringify(validReport)));
   expect(
     await new GeminiProvider().generateStructured("Inspect", reportSchema),

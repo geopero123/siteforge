@@ -50,6 +50,27 @@ export class GeminiProvider implements AIProvider {
     schema: z.ZodType<T>,
     images: Buffer[] = [],
   ): Promise<T> {
+    // Nested array/string bounds can make Gemini's generation grammar too large.
+    // Keep them as model guidance; the original Zod schema still enforces them.
+    const responseSchema = z.toJSONSchema(schema, {
+      override: ({ jsonSchema }) => {
+        const node = jsonSchema as Record<string, unknown>;
+        const limits: string[] = [];
+        for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
+          if (node[key] === undefined) continue;
+          limits.push(`${key}: ${node[key]}`);
+          delete node[key];
+        }
+        if (limits.length)
+          node.description = [
+            node.description,
+            `Validation limits: ${limits.join(", ")}.`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+      },
+    });
+    delete responseSchema.$schema;
     const parts = [
       { type: "text" as const, text: redactSecrets(prompt.slice(0, 160000)) },
       ...images.slice(0, 3).map((image) => ({
@@ -69,7 +90,9 @@ export class GeminiProvider implements AIProvider {
             ? [
                 {
                   type: "text" as const,
-                  text: "Previous response did not validate. Return strictly valid JSON matching the supplied schema.",
+                  text:
+                    "Previous response did not validate. Return strictly valid JSON matching the supplied schema. Validation error: " +
+                    redactSecrets(lastValidationError.slice(0, 1000)),
                 },
               ]
             : []),
@@ -78,7 +101,7 @@ export class GeminiProvider implements AIProvider {
         response_format: {
           type: "text",
           mime_type: "application/json",
-          schema: z.toJSONSchema(schema),
+          schema: responseSchema,
         },
         generation_config: { max_output_tokens: 16000 },
         store: false,

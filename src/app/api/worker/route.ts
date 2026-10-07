@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
 import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+import { z } from "zod";
 import { adminDb } from "@/lib/supabase/admin";
 import { DEFAULT_GEMINI_MODEL, GeminiProvider } from "@/lib/ai/provider";
 import { redactSecrets } from "@/lib/security/redact";
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
   )
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const body = await request.text();
-  let input: { action?: string } = {};
+  let input: { action?: string; probe?: string } = {};
   try {
     if (body) input = JSON.parse(body);
     if (!input || typeof input !== "object") throw new Error("Invalid request");
@@ -35,13 +37,38 @@ export async function POST(request: Request) {
   // Verify the production model with the same provider as audits, without
   // creating an audit or exposing the API key to the caller.
   if (input.action === "verify-ai") {
+    if (input.probe && !["text", "small", "minimal"].includes(input.probe))
+      return NextResponse.json({ error: "Unknown probe." }, { status: 400 });
     try {
-      const result = await new GeminiProvider().generateStructured(
-        'This is a connection test with no audit evidence. Return JSON {"issues":[],"summary":"Connection successful"}.',
-        reportSchema,
-      );
-      if (result.issues.length || !result.summary.trim())
-        throw new Error("Gemini connection test did not pass.");
+      const provider = new GeminiProvider();
+      if (input.probe === "minimal") {
+        const response = await new GoogleGenAI({
+          apiKey: process.env.GEMINI_API_KEY,
+        }).interactions.create({
+          model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+          input: "Reply with the word ready.",
+          store: false,
+        });
+        if (!response.output_text?.trim())
+          throw new Error("Empty Gemini response.");
+      } else if (input.probe === "text") {
+        if (!(await provider.generate("Reply with the word ready.")).trim())
+          throw new Error("Empty Gemini response.");
+      } else if (input.probe === "small") {
+        const response = await provider.generateStructured(
+          'Return JSON {"ready":true}.',
+          z.object({ ready: z.boolean() }),
+        );
+        if (!response.ready)
+          throw new Error("Gemini connection test did not pass.");
+      } else {
+        const result = await provider.generateStructured(
+          'This is a connection test with no audit evidence. Return JSON {"issues":[],"summary":"Connection successful"}.',
+          reportSchema,
+        );
+        if (result.issues.length || !result.summary.trim())
+          throw new Error("Gemini connection test did not pass.");
+      }
       return NextResponse.json({
         ready: true,
         model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
@@ -49,6 +76,7 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error(
         "Gemini connection test failed:",
+        input.probe || "report",
         redactSecrets(String(error)),
       );
       return NextResponse.json(
