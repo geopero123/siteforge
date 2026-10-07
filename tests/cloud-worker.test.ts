@@ -82,9 +82,10 @@ it("does not launch another VM when a concurrent request wins startup", async ()
 it("isolates networking before injecting credentials and starts only the reserved audit", async () => {
   queue(true);
   const runCommand = vi.fn().mockResolvedValue({ exitCode: 0 });
+  const mkDir = vi.fn().mockRejectedValue(new Error("File exists"));
   mocks.readFile.mockResolvedValue(Buffer.from("worker"));
   mocks.create.mockResolvedValue({
-    mkDir: vi.fn(),
+    mkDir,
     writeFiles: vi.fn(),
     runCommand,
   });
@@ -95,6 +96,11 @@ it("isolates networking before injecting credentials and starts only the reserve
   });
   expect(runCommand.mock.calls[0][0].env).toBeUndefined();
   expect(runCommand.mock.calls[1][0]).toMatchObject({
+    cmd: "mkdir",
+    args: ["-p", "/vercel/siteforge/.audit-worker"],
+  });
+  expect(mkDir).not.toHaveBeenCalled();
+  expect(runCommand.mock.calls[2][0]).toMatchObject({
     cmd: "node",
     detached: true,
     env: {
@@ -104,6 +110,25 @@ it("isolates networking before injecting credentials and starts only the reserve
     },
   });
   expect(mocks.create.mock.calls[0][0].persistent).toBe(false);
+});
+
+it("does not launch a credential-bearing worker if its directory cannot be prepared", async () => {
+  const updates = queue(true);
+  const runCommand = vi
+    .fn()
+    .mockResolvedValueOnce({ exitCode: 0 })
+    .mockResolvedValueOnce({ exitCode: 1 });
+  mocks.readFile.mockResolvedValue(Buffer.from("worker"));
+  const stop = vi.fn().mockResolvedValue(undefined);
+  mocks.create.mockResolvedValue({ runCommand, stop, writeFiles: vi.fn() });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await expect(dispatchQueuedAudit("audit-one")).rejects.toThrow(
+    "could not start",
+  );
+  expect(runCommand).toHaveBeenCalledTimes(2);
+  expect(stop).toHaveBeenCalled();
+  expect(updates.at(-1)).toMatchObject({ status: "failed" });
+  vi.restoreAllMocks();
 });
 
 it("records a visible failure if cloud startup fails", async () => {

@@ -109,7 +109,14 @@ export async function dispatchQueuedAudit(id: string) {
     });
     if (isolation.exitCode !== 0)
       throw new Error("Could not enforce worker network isolation.");
-    await sandbox.mkDir("/vercel/siteforge/.audit-worker");
+    // Prepared snapshots already contain this directory; mkdir -p also handles
+    // snapshots built without a worker bundle.
+    const directory = await sandbox.runCommand({
+      cmd: "mkdir",
+      args: ["-p", "/vercel/siteforge/.audit-worker"],
+    });
+    if (directory.exitCode !== 0)
+      throw new Error("Could not prepare worker directory.");
     await sandbox.writeFiles([
       { path: "/vercel/siteforge/.audit-worker/worker.cjs", content: bundle },
     ]);
