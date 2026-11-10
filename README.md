@@ -20,7 +20,7 @@ Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABAS
 
 Apply `supabase/migrations/20261004084108_initial_siteforge.sql` to a fresh Supabase project through its SQL editor or the Supabase CLI migration workflow. This creates projects, audits, issues, collected pages, screenshot records, mission steps, live events, queue functions, ownership policies, and a private screenshot bucket. Auth users are managed by Supabase Auth.
 
-In Supabase Authentication settings, set the Site URL to `http://localhost:3000` and allow `http://localhost:3000/auth/callback`. Email sign-in uses secure links. For GitHub sign-in, enable the GitHub provider and configure its OAuth credentials in Supabase; the application does not need the GitHub OAuth secret.
+In Supabase Authentication settings, set the Site URL to `http://localhost:3000` and allow `http://localhost:3000/auth/callback`. Email sign-in uses secure links. For Google sign-in, register a Google OAuth web client, add the Supabase OAuth callback as an authorized redirect URI, and enter the client credentials in the Supabase Google provider. The Google OAuth secret belongs in Supabase.
 
 ```sh
 npm run dev

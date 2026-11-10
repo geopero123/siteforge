@@ -132,6 +132,22 @@ try {
     await page.goto(app + "/dashboard");
     await page.waitForURL(/\/login/);
   });
+  await step("Google sign-in uses the SiteForge callback", async () => {
+    const authorize = (url: URL) =>
+      url.origin === supa && url.pathname === "/auth/v1/authorize";
+    await page.route(authorize, (route) => route.fulfill({ status: 204 }));
+    try {
+      const [request] = await Promise.all([
+        page.waitForRequest((request) => authorize(new URL(request.url()))),
+        page.getByRole("button", { name: "Continue with Google" }).click(),
+      ]);
+      const params = new URL(request.url()).searchParams;
+      expect(params.get("provider") === "google", "Google provider");
+      expect(params.get("redirect_to") === app + "/auth/callback", "SiteForge callback");
+    } finally {
+      await page.unroute(authorize);
+    }
+  });
   await step("login sends a magic link", async () => {
     await page.fill('input[type="email"]', "alex@northwind.dev");
     await page.click("text=Email me a sign-in link");

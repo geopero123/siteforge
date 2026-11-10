@@ -38,7 +38,7 @@ export function BrandMark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-// GitHub's mark, used only to label GitHub sign-in and repositories.
+// GitHub's mark, used to label repositories.
 export function GithubMark({ size = 16 }: { size?: number }) {
   return (
     <svg
