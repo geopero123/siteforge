@@ -139,6 +139,7 @@ export async function startFakeSupabase(options: {
   const db = createDatabase();
   const images = options.images ?? new Map<string, Buffer>();
   const requests: string[] = [];
+  let password = "preview-password";
   let port = options.port ?? 0;
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -151,7 +152,7 @@ export async function startFakeSupabase(options: {
     response.setHeader("Access-Control-Allow-Headers", "*");
     response.setHeader(
       "Access-Control-Allow-Methods",
-      "GET,POST,PATCH,DELETE,HEAD,OPTIONS",
+      "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS",
     );
     response.setHeader("Access-Control-Expose-Headers", "Content-Range");
     const json = (status: number, value: unknown, headers: Row = {}) => {
@@ -177,11 +178,23 @@ export async function startFakeSupabase(options: {
 
     if (url.pathname.startsWith("/auth/v1/")) {
       const route = url.pathname.slice(9);
-      if (route === "user")
-        return signedIn
-          ? json(200, authUser())
-          : json(401, { code: 401, msg: "Invalid token" });
+      if (route === "user") {
+        if (!signedIn) return json(401, { code: 401, msg: "Invalid token" });
+        if (request.method === "PUT") {
+          const input = await body(request);
+          if (typeof input.password !== "string" || input.password.length < 8)
+            return json(422, { msg: "Use at least 8 characters." });
+          password = input.password;
+        }
+        return json(200, authUser());
+      }
       if (route === "token") {
+        const grant = url.searchParams.get("grant_type");
+        const input = await body(request);
+        if (grant === "password" && (input.email !== fixtures.user.email || input.password !== password))
+          return json(400, { error_code: "invalid_credentials", msg: "Invalid login credentials" });
+        if (grant === "pkce" && (input.auth_code !== "preview-recovery-code" || !input.code_verifier))
+          return json(400, { msg: "Invalid authorization code" });
         const cookie = sessionCookie(port);
         return json(200, {
           access_token: cookie.accessToken,
@@ -191,7 +204,11 @@ export async function startFakeSupabase(options: {
           user: authUser(),
         });
       }
-      if (route === "otp") return json(200, {});
+      if (route === "signup") {
+        const input = await body(request);
+        return json(200, { ...authUser(), email: input.email });
+      }
+      if (route === "recover") return json(200, {});
       if (route === "logout") return json(204, undefined);
       return json(404, { msg: "Not supported in preview" });
     }

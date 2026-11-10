@@ -1,80 +1,124 @@
 "use client";
-import { useState } from "react";
-import { Mail, MailCheck } from "lucide-react";
+import { isAuthApiError } from "@supabase/supabase-js";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import { browserDb } from "@/lib/supabase/client";
-import { GithubMark } from "./ui";
-export function LoginForm() {
-  const [email, setEmail] = useState(""),
-    [message, setMessage] = useState(""),
-    [sent, setSent] = useState(false),
-    [busy, setBusy] = useState(false);
+
+export type LoginMode = "sign-in" | "sign-up" | "recover" | "update-password";
+
+const submitLabel: Record<LoginMode, string> = {
+  "sign-in": "Sign in",
+  "sign-up": "Create account",
+  recover: "Send password reset link",
+  "update-password": "Save password",
+};
+
+export function LoginForm({ mode }: { mode: LoginMode }) {
+  const router = useRouter();
+  const [message, setMessage] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const updating = mode === "update-password";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    const email = String(fields.get("email") ?? "").trim();
+    const password = String(fields.get("password") ?? "");
+    const callback = location.origin + "/auth/callback";
+    setMessage("");
+    setSent(false);
+    setBusy(true);
+
+    try {
+      const { auth } = browserDb();
+      switch (mode) {
+        case "sign-in": {
+          const { error } = await auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          break;
+        }
+        case "sign-up": {
+          const { data, error } = await auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: callback },
+          });
+          if (error) throw error;
+          if (!data.session) {
+            setSent(true);
+            setMessage("Check your email to confirm your account. Open the link in this browser.");
+            return;
+          }
+          break;
+        }
+        case "recover": {
+          const { error } = await auth.resetPasswordForEmail(email, {
+            redirectTo: callback,
+          });
+          if (error) throw error;
+          setSent(true);
+          setMessage("If an account exists, you’ll receive a password reset link. Open it in this browser.");
+          return;
+        }
+        case "update-password": {
+          const { error } = await auth.updateUser({ password });
+          if (error) throw error;
+          break;
+        }
+      }
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (error) {
+      if (isAuthApiError(error) && error.code === "email_address_not_authorized") {
+        setMessage("SiteForge can currently send account emails to team addresses only.");
+      } else {
+        setMessage(error instanceof Error ? error.message : "Please try again.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
       {message && (
-        <div role="status" className={"alert " + (sent ? "success" : "error")}>
-          {sent && <MailCheck size={16} />}
-          <div>{message}</div>
-        </div>
+        <p role={sent ? "status" : "alert"} className={"alert " + (sent ? "success" : "error")}>
+          {message}
+        </p>
       )}
-      <button
-        className="button large block"
-        onClick={async () => {
-          setSent(false);
-          try {
-            const { error } = await browserDb().auth.signInWithOAuth({
-              provider: "github",
-              options: { redirectTo: location.origin + "/auth/callback" },
-            });
-            if (error) throw error;
-          } catch (e) {
-            setMessage((e as Error).message);
-          }
-        }}
-      >
-        <GithubMark size={17} /> Continue with GitHub
-      </button>
-      <div className="divider">or use your email</div>
-      <form
-        className="form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setSent(false);
-          try {
-            const { error } = await browserDb().auth.signInWithOtp({
-              email,
-              options: { emailRedirectTo: location.origin + "/auth/callback" },
-            });
-            if (error) throw error;
-            setSent(true);
-            setMessage(`Check ${email} for a secure sign-in link.`);
-          } catch (e) {
-            setMessage((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label>
-          Email address
-          <input
-            type="email"
-            autoComplete="email"
-            placeholder="you@company.com"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
+      <form className="form" method="post" onSubmit={submit}>
+        {!updating && (
+          <label>
+            Email address
+            <input name="email" type="email" autoComplete="email" required />
+          </label>
+        )}
+        {mode !== "recover" && (
+          <label>
+            {updating ? "New password" : "Password"}
+            <input
+              name="password"
+              type="password"
+              autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+              minLength={mode === "sign-in" ? undefined : 8}
+              required
+            />
+          </label>
+        )}
         <button disabled={busy} className="button primary large block">
-          <Mail size={16} />
-          {busy ? "Sending link…" : "Email me a sign-in link"}
+          {busy ? "Please wait…" : submitLabel[mode]}
         </button>
       </form>
-      <small>
-        GitHub sign-in doesn’t grant repository access. Repositories are
-        connected separately and read-only.
-      </small>
+      {mode === "sign-in" ? (
+        <p className="form-hint">
+          <Link href="/login?mode=sign-up">Create an account</Link>{" · "}
+          <Link href="/login?mode=recover">Forgot password?</Link>
+        </p>
+      ) : (
+        <p className="form-hint"><Link href="/login">Back to sign in</Link></p>
+      )}
     </div>
   );
 }

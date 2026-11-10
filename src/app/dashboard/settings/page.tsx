@@ -49,7 +49,7 @@ export default async function Settings() {
               </div>
             </div>
             <p style={{ margin: "16px 0 0", fontSize: 13 }}>
-              GitHub repository access is separate from GitHub sign-in.
+              Connect GitHub repositories separately to audit them.
             </p>
           </section>
           <section className="panel">

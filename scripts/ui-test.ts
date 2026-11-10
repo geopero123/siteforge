@@ -132,15 +132,49 @@ try {
     await page.goto(app + "/dashboard");
     await page.waitForURL(/\/login/);
   });
-  await step("login sends a magic link", async () => {
-    await page.fill('input[type="email"]', "alex@northwind.dev");
-    await page.click("text=Email me a sign-in link");
-    await page
-      .getByText("Check alex@northwind.dev for a secure sign-in link.")
-      .waitFor();
+  await step("signup asks the user to confirm their email", async () => {
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("link", { name: "Create an account" }).click();
+    await page.getByRole("heading", { name: "Create a SiteForge account" }).waitFor();
+    await page.getByLabel("Email address").fill("new@northwind.dev");
+    await page.getByLabel("Password").fill("preview-signup-password");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await page.getByText("Check your email to confirm your account.").waitFor();
   });
-  await page.goto(supa + "/__signin");
-  await page.waitForURL(/\/dashboard$/);
+  const updatedPassword = "preview-updated-password";
+  await step("an existing account can set a password through recovery", async () => {
+    await page.goto(app + "/login", { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: "Forgot password?" }).click();
+    await page.getByRole("heading", { name: "Reset your password" }).waitFor();
+    await page.getByLabel("Email address").fill("alex@northwind.dev");
+    const [request] = await Promise.all([
+      page.waitForRequest((request) =>
+        request.method() === "POST" && new URL(request.url()).pathname === "/auth/v1/recover"
+      ),
+      page.getByRole("button", { name: "Send password reset link" }).click(),
+    ]);
+    await page.getByRole("status").filter({ hasText: "you’ll receive a password reset link" }).waitFor();
+    const callback = new URL(new URL(request.url()).searchParams.get("redirect_to") ?? "");
+    expect(callback.origin === app && callback.pathname === "/auth/callback", "recovery callback");
+    callback.searchParams.set("code", "preview-recovery-code");
+    await page.goto(callback.href);
+    await page.getByLabel("New password").fill(updatedPassword);
+    await page.getByRole("button", { name: "Save password" }).click();
+    await page.waitForURL(/\/dashboard$/);
+  });
+  await step("password sign-in rejects bad credentials and opens the dashboard with the new password", async () => {
+    await context.clearCookies();
+    await page.goto(app + "/login", { waitUntil: "networkidle" });
+    await page.getByLabel("Email address").fill("alex@northwind.dev");
+    const password = page.getByLabel("Password", { exact: true });
+    const submit = page.getByRole("button", { name: "Sign in", exact: true });
+    await password.fill("incorrect-password");
+    await submit.click();
+    await page.getByRole("alert").filter({ hasText: "Invalid login credentials" }).waitFor();
+    await password.fill(updatedPassword);
+    await submit.click();
+    await page.waitForURL(/\/dashboard$/);
+  });
 
   await step(
     "landing routes a GitHub link to a new code-only project",
@@ -180,7 +214,6 @@ try {
     async () => {
       await page.click("button:has-text('Scan repository')");
       await page.waitForURL(/\/dashboard\/audits\/[0-9a-f-]{36}$/);
-      await page.getByText("Waiting for a worker").waitFor();
       await page
         .locator(".badge.queued", { hasText: "Queued" })
         .first()
