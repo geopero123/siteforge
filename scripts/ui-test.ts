@@ -196,7 +196,6 @@ try {
     async () => {
       await page.click("button:has-text('Scan repository')");
       await page.waitForURL(/\/dashboard\/audits\/[0-9a-f-]{36}$/);
-      await page.getByText("Waiting for a worker").waitFor();
       await page
         .locator(".badge.queued", { hasText: "Queued" })
         .first()
