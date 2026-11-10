@@ -17,7 +17,7 @@ const submitLabel: Record<LoginMode, string> = {
 export function LoginForm({ mode }: { mode: LoginMode }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
-  const [sent, setSent] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const updating = mode === "update-password";
 
@@ -28,7 +28,7 @@ export function LoginForm({ mode }: { mode: LoginMode }) {
     const password = String(fields.get("password") ?? "");
     const callback = location.origin + "/auth/callback";
     setMessage("");
-    setSent(false);
+    setSubmitted(false);
     setBusy(true);
 
     try {
@@ -47,8 +47,8 @@ export function LoginForm({ mode }: { mode: LoginMode }) {
           });
           if (error) throw error;
           if (!data.session) {
-            setSent(true);
-            setMessage("Check your email to confirm your account. Open the link in this browser.");
+            setSubmitted(true);
+            setMessage("If this email is new to SiteForge, check your inbox for a confirmation link and open it in this browser. If you already have an account, sign in or reset your password.");
             return;
           }
           break;
@@ -58,7 +58,7 @@ export function LoginForm({ mode }: { mode: LoginMode }) {
             redirectTo: callback,
           });
           if (error) throw error;
-          setSent(true);
+          setSubmitted(true);
           setMessage("If an account exists, you’ll receive a password reset link. Open it in this browser.");
           return;
         }
@@ -84,7 +84,7 @@ export function LoginForm({ mode }: { mode: LoginMode }) {
   return (
     <div className="stack">
       {message && (
-        <p role={sent ? "status" : "alert"} className={"alert " + (sent ? "success" : "error")}>
+        <p role={submitted ? "status" : "alert"} className={"alert " + (submitted ? "success" : "error")}>
           {message}
         </p>
       )}
@@ -117,7 +117,12 @@ export function LoginForm({ mode }: { mode: LoginMode }) {
           <Link href="/login?mode=recover">Forgot password?</Link>
         </p>
       ) : (
-        <p className="form-hint"><Link href="/login">Back to sign in</Link></p>
+        <p className="form-hint">
+          <Link href="/login">Back to sign in</Link>
+          {mode === "sign-up" && (
+            <>{" · "}<Link href="/login?mode=recover">Forgot password?</Link></>
+          )}
+        </p>
       )}
     </div>
   );

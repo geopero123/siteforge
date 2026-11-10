@@ -132,14 +132,15 @@ try {
     await page.goto(app + "/dashboard");
     await page.waitForURL(/\/login/);
   });
-  await step("signup asks the user to confirm their email", async () => {
+  await step("signup gives confirmation and recovery instructions", async () => {
     await page.waitForLoadState("networkidle");
     await page.getByRole("link", { name: "Create an account" }).click();
     await page.getByRole("heading", { name: "Create a SiteForge account" }).waitFor();
     await page.getByLabel("Email address").fill("new@northwind.dev");
     await page.getByLabel("Password").fill("preview-signup-password");
     await page.getByRole("button", { name: "Create account" }).click();
-    await page.getByText("Check your email to confirm your account.").waitFor();
+    await page.getByRole("status").filter({ hasText: "If this email is new to SiteForge" }).waitFor();
+    await page.getByRole("link", { name: "Forgot password?" }).waitFor();
   });
   const updatedPassword = "preview-updated-password";
   await step("an existing account can set a password through recovery", async () => {
