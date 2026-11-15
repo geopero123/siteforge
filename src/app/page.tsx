@@ -14,7 +14,7 @@ import {
 import { Brand } from "@/components/brand";
 import { UrlEntry } from "@/components/url-entry";
 import { Pricing } from "@/components/pricing";
-import { ProductPreview } from "@/components/product-preview";
+import { InspectionDrawing } from "@/components/inspection-drawing";
 import { Spotlight } from "@/components/spotlight";
 import { CountUp } from "@/components/ui";
 
@@ -86,12 +86,25 @@ export default function Landing() {
       <main className="landing">
         <section className="hero">
           <div className="hero-copy">
-            <div className="hero-badge">
-              <b>New</b> Full GitHub repository scans
-            </div>
+            <p className="sheet-label">
+              <span>Sheet A-01</span> Website &amp; code inspection
+            </p>
             <h1>
-              Find what breaks{" "}
-              <span className="gradient-text">before your users&nbsp;do.</span>
+              Find what{" "}
+              <span className="redline-word">
+                breaks
+                <svg
+                  viewBox="0 0 200 80"
+                  preserveAspectRatio="none"
+                  aria-hidden
+                >
+                  <path
+                    d="M14 46 C 10 18, 70 6, 118 8 C 168 10, 196 24, 190 46 C 184 70, 120 78, 76 74 C 34 70, 6 60, 16 36 C 22 24, 40 16, 62 12"
+                    pathLength={1}
+                  />
+                </svg>
+              </span>{" "}
+              before your users&nbsp;do.
             </h1>
             <p className="hero-lead">
               SiteForge tests your website in a real browser and reads your
@@ -111,7 +124,7 @@ export default function Landing() {
               </li>
             </ul>
           </div>
-          <ProductPreview />
+          <InspectionDrawing />
         </section>
 
         <section

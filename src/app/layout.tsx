@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     "Real-browser website audits and full GitHub repository scans. Every finding comes with evidence, a location and a fix.",
 };
 export const viewport: Viewport = {
-  themeColor: "#07090b",
+  themeColor: "#0a1f4f",
   colorScheme: "dark",
 };
 export default function RootLayout({
