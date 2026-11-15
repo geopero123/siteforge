@@ -14,26 +14,30 @@ export function CountUp({ value, from = 0 }: { value: number; from?: number }) {
   );
 }
 
+// An inspector's stamp: a drafting-yellow square with a check and a redline mark.
 export function BrandMark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 32 32" className="brand-mark" aria-hidden {...props}>
-      <defs>
-        <linearGradient id="sf-mark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#b6f7c4" />
-          <stop offset="0.55" stopColor="#7eeaa0" />
-          <stop offset="1" stopColor="#4fd1c5" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="9" fill="url(#sf-mark)" />
-      <path
-        d="M9 16.5l4.6 4.6L23.5 11"
+      <rect x="1" y="1" width="30" height="30" rx="4" fill="#ffd447" />
+      <rect
+        x="4.5"
+        y="4.5"
+        width="23"
+        height="23"
+        rx="2"
         fill="none"
-        stroke="#052612"
-        strokeWidth="3.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        stroke="#0a1f4f"
+        strokeWidth="1.4"
+        strokeDasharray="2.4 2"
       />
-      <circle cx="23.5" cy="21.5" r="2.2" fill="#052612" />
+      <path
+        d="M9.5 16.5l4.2 4.2L22.5 11.5"
+        fill="none"
+        stroke="#0a1f4f"
+        strokeWidth="3.2"
+        strokeLinecap="square"
+      />
+      <circle cx="23.5" cy="22.5" r="2.6" fill="#ff5a45" />
     </svg>
   );
 }
